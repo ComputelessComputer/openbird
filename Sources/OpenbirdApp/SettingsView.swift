@@ -165,10 +165,10 @@ struct SettingsView: View {
         VStack(alignment: .leading, spacing: 16) {
             Text("Delete data")
                 .font(.title3.bold())
-            HStack {
-                Button("Delete last hour") { model.deleteData(scope: .lastHour) }
-                Button("Delete last day") { model.deleteData(scope: .lastDay) }
-                Button("Delete all") { model.deleteData(scope: .all) }
+            ControlGroup {
+                Button("Last hour") { model.deleteData(scope: .lastHour) }
+                Button("Last day") { model.deleteData(scope: .lastDay) }
+                Button("All") { model.deleteData(scope: .all) }
             }
         }
     }
