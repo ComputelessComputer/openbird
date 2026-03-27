@@ -43,7 +43,7 @@ final class AppModel: ObservableObject {
     private let retrievalService: RetrievalService
     private let chatService: ChatService
     private let retentionService: RetentionService
-    private let collectorController = CollectorProcessController()
+    private let collectorRuntime: CollectorRuntime
 
     init() {
         do {
@@ -53,14 +53,19 @@ final class AppModel: ObservableObject {
             self.retrievalService = RetrievalService(store: store)
             self.chatService = ChatService(store: store, retrievalService: retrievalService)
             self.retentionService = RetentionService(store: store)
+            self.collectorRuntime = CollectorRuntime(store: store)
         } catch {
             fatalError("Failed to initialize Openbird store: \(error)")
         }
 
-        collectorController.startIfPossible()
+        collectorRuntime.start()
         Task {
             await refresh()
         }
+    }
+
+    deinit {
+        collectorRuntime.stop()
     }
 
     var accessibilityTrusted: Bool {
