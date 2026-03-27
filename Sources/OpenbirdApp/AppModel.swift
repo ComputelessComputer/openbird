@@ -36,6 +36,7 @@ final class AppModel: ObservableObject {
     @Published var errorMessage: String?
     @Published var isBusy = false
     @Published var isShowingRawLogInspector = false
+    @Published private(set) var accessibilityTrusted = false
 
     let permissionsService = PermissionsService()
     private let store: OpenbirdStore
@@ -58,6 +59,7 @@ final class AppModel: ObservableObject {
             fatalError("Failed to initialize Openbird store: \(error)")
         }
 
+        accessibilityTrusted = permissionsService.isAccessibilityTrusted
         collectorRuntime.start()
         Task {
             await refresh()
@@ -66,10 +68,6 @@ final class AppModel: ObservableObject {
 
     deinit {
         collectorRuntime.stop()
-    }
-
-    var accessibilityTrusted: Bool {
-        permissionsService.isAccessibilityTrusted
     }
 
     var accessibilityTargetName: String {
@@ -137,6 +135,7 @@ final class AppModel: ObservableObject {
     }
 
     func refresh() async {
+        refreshAccessibilityPermissionState()
         isBusy = true
         defer { isBusy = false }
 
@@ -162,11 +161,19 @@ final class AppModel: ObservableObject {
     }
 
     func requestAccessibilityPermission() {
-        _ = permissionsService.requestAccessibilityPermission()
+        accessibilityTrusted = permissionsService.requestAccessibilityPermission()
     }
 
     func openAccessibilitySettings() {
         permissionsService.openAccessibilitySettings()
+    }
+
+    func refreshAccessibilityPermissionState() {
+        let isTrusted = permissionsService.isAccessibilityTrusted
+        guard accessibilityTrusted != isTrusted else {
+            return
+        }
+        accessibilityTrusted = isTrusted
     }
 
     func toggleCapturePaused() {

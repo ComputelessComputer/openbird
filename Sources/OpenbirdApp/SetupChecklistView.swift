@@ -2,6 +2,7 @@ import SwiftUI
 
 struct SetupChecklistView: View {
     @ObservedObject var model: AppModel
+    private let accessibilityStatusTimer = Timer.publish(every: 1, on: .main, in: .common).autoconnect()
 
     var body: some View {
         VStack(alignment: .leading, spacing: 20) {
@@ -19,12 +20,18 @@ struct SetupChecklistView: View {
                         description: "Needed to read the active window tree and build the local activity log.",
                         isComplete: model.accessibilityTrusted
                     ) {
-                        HStack(spacing: 12) {
-                            Button("Request Accessibility Access") {
-                                model.requestAccessibilityPermission()
-                            }
-                            Button("Open Accessibility Settings") {
+                        if model.accessibilityTrusted {
+                            Button("Remove", role: .destructive) {
                                 model.openAccessibilitySettings()
+                            }
+                        } else {
+                            HStack(spacing: 12) {
+                                Button("Request Accessibility Access") {
+                                    model.requestAccessibilityPermission()
+                                }
+                                Button("Open Accessibility Settings") {
+                                    model.openAccessibilitySettings()
+                                }
                             }
                         }
                     }
@@ -57,6 +64,12 @@ struct SetupChecklistView: View {
         .padding(24)
         .frame(maxWidth: .infinity, alignment: .leading)
         .background(Color(nsColor: .controlBackgroundColor), in: RoundedRectangle(cornerRadius: 24, style: .continuous))
+        .onAppear {
+            model.refreshAccessibilityPermissionState()
+        }
+        .onReceive(accessibilityStatusTimer) { _ in
+            model.refreshAccessibilityPermissionState()
+        }
     }
 
     private func permissionRow<Actions: View>(
