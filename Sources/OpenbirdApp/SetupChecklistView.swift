@@ -39,14 +39,6 @@ struct SetupChecklistView: View {
             }
             .padding(24)
             .background(Color(nsColor: .controlBackgroundColor), in: RoundedRectangle(cornerRadius: 24, style: .continuous))
-
-            VStack(alignment: .leading, spacing: 10) {
-                Text("Never captured by default")
-                    .font(.headline)
-                Text("Raw key events, clipboard contents, hidden windows, secure text fields, passwords, and automatic screenshots.")
-                    .foregroundStyle(.secondary)
-            }
-
         }
         .padding(24)
         .frame(maxWidth: .infinity, alignment: .leading)
