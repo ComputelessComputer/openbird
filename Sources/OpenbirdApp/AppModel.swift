@@ -51,6 +51,7 @@ final class AppModel: ObservableObject {
     private let collectorRuntime: CollectorRuntime
     private let collectorOwnerID: String
     private var providerConnectionTask: Task<Void, Never>?
+    private var providerSaveTask: Task<Void, Never>?
     private var providerConnectionRequestID = UUID()
 
     init() {
@@ -83,6 +84,7 @@ final class AppModel: ObservableObject {
 
     deinit {
         providerConnectionTask?.cancel()
+        providerSaveTask?.cancel()
         collectorRuntime.stop()
     }
 
@@ -213,19 +215,6 @@ final class AppModel: ObservableObject {
         availableProviderModels.filter { ProviderConnectionAdvisor.isEmbeddingModel($0.id) }
     }
 
-    var canSaveEditingProvider: Bool {
-        let chatModel = editingProvider.chatModel.trimmingCharacters(in: .whitespacesAndNewlines)
-        guard chatModel.isEmpty == false else {
-            return false
-        }
-
-        if availableChatModels.isEmpty == false {
-            return availableChatModels.contains { $0.id == chatModel }
-        }
-
-        return ProviderConnectionAdvisor.shouldReplaceChatModel(chatModel) == false
-    }
-
     private var isRunningFromAppBundle: Bool {
         Bundle.main.bundleURL.pathExtension == "app"
     }
@@ -297,32 +286,9 @@ final class AppModel: ObservableObject {
         }
     }
 
-    func saveEditingProvider() {
-        cancelPendingProviderConnectionCheck()
-        Task {
-            do {
-                var provider = sanitizedProviderConfig(editingProvider)
-                provider.updatedAt = Date()
-                provider.isEnabled = true
-                try await store.saveProviderConfig(provider)
-
-                var settings = try await store.loadSettings()
-                settings.activeProviderID = provider.id
-                try await store.saveSettings(settings)
-                providerStatusMessage = "Saved provider settings."
-                await refresh()
-            } catch {
-                errorMessage = error.localizedDescription
-            }
-        }
-    }
-
-    func checkProviderConnection() {
-        startProviderConnectionCheck(for: sanitizedProviderConfig(editingProvider))
-    }
-
     func scheduleAutomaticProviderConnectionCheckIfNeeded() {
         let config = sanitizedProviderConfig(editingProvider)
+        cancelPendingProviderSave()
         cancelPendingProviderConnectionCheck()
         clearProviderConnectionResult()
 
@@ -347,6 +313,29 @@ final class AppModel: ObservableObject {
                 using: config,
                 requestID: requestID
             )
+        }
+    }
+
+    func scheduleAutomaticProviderSaveIfNeeded() {
+        let provider = sanitizedProviderConfig(editingProvider)
+        cancelPendingProviderSave()
+
+        guard canPersistProvider(provider, availableModels: availableProviderModels) else {
+            return
+        }
+
+        providerSaveTask = Task { [weak self] in
+            do {
+                try await Task.sleep(for: .milliseconds(300))
+            } catch {
+                return
+            }
+
+            guard let self else {
+                return
+            }
+
+            await self.persistProvider(provider, statusMessage: "Saved provider settings.")
         }
     }
 
@@ -381,22 +370,30 @@ final class AppModel: ObservableObject {
         return sanitized
     }
 
-    private func startProviderConnectionCheck(for config: ProviderConfig) {
-        cancelPendingProviderConnectionCheck()
-        availableProviderModels = []
+    private func persistProvider(_ provider: ProviderConfig, statusMessage: String) async {
+        do {
+            var savedProvider = provider
+            savedProvider.updatedAt = Date()
+            savedProvider.isEnabled = true
+            try await store.saveProviderConfig(savedProvider)
 
-        let requestID = UUID()
-        providerConnectionRequestID = requestID
-        providerConnectionTask = Task { [weak self] in
-            guard let self else {
-                return
+            var updatedSettings = try await store.loadSettings()
+            updatedSettings.activeProviderID = savedProvider.id
+            try await store.saveSettings(updatedSettings)
+
+            settings = updatedSettings
+            if let index = providerConfigs.firstIndex(where: { $0.id == savedProvider.id }) {
+                providerConfigs[index] = savedProvider
+            } else {
+                providerConfigs.append(savedProvider)
             }
-
-            await self.performProviderConnectionCheck(
-                using: config,
-                requestID: requestID
-            )
+            editingProvider = savedProvider
+            providerStatusMessage = statusMessage
+        } catch {
+            errorMessage = error.localizedDescription
         }
+
+        providerSaveTask = nil
     }
 
     private func performProviderConnectionCheck(
@@ -430,10 +427,15 @@ final class AppModel: ObservableObject {
             }
             editingProvider = updated
 
-            if models.isEmpty {
-                providerStatusMessage = "Connection successful."
+            if canPersistProvider(updated, availableModels: models) {
+                await persistProvider(
+                    updated,
+                    statusMessage: connectionSuccessMessage(modelCount: models.count, saved: true)
+                )
+            } else if models.isEmpty {
+                providerStatusMessage = "Connection successful, but no chat models were detected."
             } else {
-                providerStatusMessage = "Connection successful. Found \(models.count) model\(models.count == 1 ? "" : "s")."
+                providerStatusMessage = connectionSuccessMessage(modelCount: models.count, saved: false)
             }
         } catch is CancellationError {
             return
@@ -445,6 +447,35 @@ final class AppModel: ObservableObject {
         }
 
         providerConnectionTask = nil
+    }
+
+    private func canPersistProvider(_ provider: ProviderConfig, availableModels: [ProviderModelInfo]) -> Bool {
+        let chatModel = provider.chatModel.trimmingCharacters(in: .whitespacesAndNewlines)
+        guard chatModel.isEmpty == false else {
+            return false
+        }
+
+        let chatModels = availableModels.filter { ProviderConnectionAdvisor.isEmbeddingModel($0.id) == false }
+        if chatModels.isEmpty == false {
+            return chatModels.contains { $0.id == chatModel }
+        }
+
+        return ProviderConnectionAdvisor.shouldReplaceChatModel(chatModel) == false
+    }
+
+    private func connectionSuccessMessage(modelCount: Int, saved: Bool) -> String {
+        let baseMessage: String
+        if modelCount == 0 {
+            baseMessage = "Connection successful."
+        } else {
+            baseMessage = "Connection successful. Found \(modelCount) model\(modelCount == 1 ? "" : "s")."
+        }
+
+        if saved {
+            return "\(baseMessage) Saved provider settings."
+        }
+
+        return baseMessage
     }
 
     private func shouldAutomaticallyCheckProviderConnection(for config: ProviderConfig) -> Bool {
@@ -464,6 +495,11 @@ final class AppModel: ObservableObject {
         providerConnectionTask?.cancel()
         providerConnectionTask = nil
         providerConnectionRequestID = UUID()
+    }
+
+    private func cancelPendingProviderSave() {
+        providerSaveTask?.cancel()
+        providerSaveTask = nil
     }
 
     func installedApplicationName(for bundleID: String) -> String? {

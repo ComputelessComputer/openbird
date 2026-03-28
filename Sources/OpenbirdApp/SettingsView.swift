@@ -79,17 +79,6 @@ struct SettingsView: View {
                 }
             }
 
-            HStack {
-                Button("Check Connection") {
-                    model.checkProviderConnection()
-                }
-                Button("Save") {
-                    model.saveEditingProvider()
-                }
-                .buttonStyle(.borderedProminent)
-                .disabled(model.canSaveEditingProvider == false)
-            }
-
             if model.providerStatusMessage.isEmpty == false {
                 Text(model.providerStatusMessage)
                     .font(.caption)
@@ -262,10 +251,12 @@ struct SettingsView: View {
                 guard selection.isEmpty == false else {
                     if allowsEmptySelection {
                         text.wrappedValue = ""
+                        model.scheduleAutomaticProviderSaveIfNeeded()
                     }
                     return
                 }
                 text.wrappedValue = selection
+                model.scheduleAutomaticProviderSaveIfNeeded()
             }
         )
     }
