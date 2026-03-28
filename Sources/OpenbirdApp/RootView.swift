@@ -98,10 +98,7 @@ private struct CaptureStatusView: View {
                     .font(.caption)
                     .foregroundStyle(.secondary)
             }
-            Spacer()
-            Button(model.settings.capturePaused ? "Resume" : "Pause") {
-                model.toggleCapturePaused()
-            }
+            Spacer(minLength: 0)
         }
         .padding(14)
         .background(.thinMaterial, in: RoundedRectangle(cornerRadius: 16, style: .continuous))
