@@ -502,8 +502,8 @@ final class AppModel: ObservableObject {
         providerSaveTask = nil
     }
 
-    func installedApplicationName(for bundleID: String) -> String? {
-        installedApplications.first { $0.bundleID.caseInsensitiveCompare(bundleID) == .orderedSame }?.name
+    func installedApplication(for bundleID: String) -> InstalledApplication? {
+        installedApplications.first { $0.bundleID.caseInsensitiveCompare(bundleID) == .orderedSame }
     }
 
     private func refreshInstalledApplications() {

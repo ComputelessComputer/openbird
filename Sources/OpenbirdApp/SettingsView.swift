@@ -1,3 +1,4 @@
+import AppKit
 import SwiftUI
 import OpenbirdKit
 
@@ -155,19 +156,25 @@ struct SettingsView: View {
 
             ForEach(model.exclusions) { exclusion in
                 HStack {
-                    VStack(alignment: .leading) {
-                        if exclusion.kind == .bundleID,
-                           let appName = model.installedApplicationName(for: exclusion.pattern) {
-                            Text(appName)
+                    if exclusion.kind == .bundleID,
+                       let application = model.installedApplication(for: exclusion.pattern) {
+                        applicationIcon(application)
+                        VStack(alignment: .leading) {
+                            Text(application.name)
                             Text(exclusion.pattern)
                                 .font(.caption)
                                 .foregroundStyle(.secondary)
-                        } else {
-                            Text(exclusion.pattern)
+                            Text("Bundle ID")
+                                .font(.caption)
+                                .foregroundStyle(.secondary)
                         }
-                        Text(exclusion.kind == .bundleID ? "Bundle ID" : "Domain")
-                            .font(.caption)
-                            .foregroundStyle(.secondary)
+                    } else {
+                        VStack(alignment: .leading) {
+                            Text(exclusion.pattern)
+                            Text(exclusion.kind == .bundleID ? "Bundle ID" : "Domain")
+                                .font(.caption)
+                                .foregroundStyle(.secondary)
+                        }
                     }
                     Spacer()
                     Button("Remove") {
@@ -193,7 +200,8 @@ struct SettingsView: View {
                         model.addExclusion(kind: .bundleID, pattern: application.bundleID)
                         newExclusionPattern = ""
                     } label: {
-                        HStack(alignment: .firstTextBaseline) {
+                        HStack(alignment: .center, spacing: 12) {
+                            applicationIcon(application)
                             VStack(alignment: .leading, spacing: 2) {
                                 Text(application.name)
                                     .foregroundStyle(.primary)
@@ -223,6 +231,13 @@ struct SettingsView: View {
                 .font(.caption)
                 .foregroundStyle(.secondary)
         }
+    }
+
+    private func applicationIcon(_ application: InstalledApplication) -> some View {
+        Image(nsImage: NSWorkspace.shared.icon(forFile: application.bundlePath))
+            .resizable()
+            .frame(width: 24, height: 24)
+            .clipShape(RoundedRectangle(cornerRadius: 6, style: .continuous))
     }
 
     private var deleteSection: some View {

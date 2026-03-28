@@ -62,7 +62,7 @@ public struct InstalledApplicationService: Sendable {
             value.isEmpty ? nil : value
         } ?? url.deletingPathExtension().lastPathComponent
 
-        return InstalledApplication(bundleID: bundleID, name: name)
+        return InstalledApplication(bundleID: bundleID, name: name, bundlePath: url.path)
     }
 
     private func isOpenbird(_ application: InstalledApplication) -> Bool {
