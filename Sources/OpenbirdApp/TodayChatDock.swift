@@ -1,54 +1,84 @@
 import OpenbirdKit
 import SwiftUI
 
-struct ChatView: View {
+struct TodayChatDock: View {
+    enum FocusField: Hashable {
+        case composer
+    }
+
     @ObservedObject var model: AppModel
+    @Binding var isExpanded: Bool
+    var focusedField: FocusState<FocusField?>.Binding
 
     private let contentWidth: CGFloat = 860
-    private let bottomAnchor = "chat-bottom-anchor"
+    private let bottomAnchor = "today-chat-bottom-anchor"
+    private let transcriptHeight: CGFloat = 300
 
     var body: some View {
         VStack(spacing: 0) {
-            ScrollViewReader { proxy in
-                ScrollView {
-                    VStack(alignment: .leading, spacing: 28) {
-                        if model.chatMessages.isEmpty {
-                            EmptyChatState()
-                                .frame(maxWidth: .infinity, minHeight: 320)
-                        } else {
-                            ForEach(model.chatMessages) { message in
-                                ChatMessageRow(message: message)
+            if isExpanded {
+                ScrollViewReader { proxy in
+                    ScrollView {
+                        VStack(alignment: .leading, spacing: 24) {
+                            if model.chatMessages.isEmpty {
+                                EmptyChatState()
+                                    .frame(maxWidth: .infinity, minHeight: transcriptHeight, alignment: .leading)
+                            } else {
+                                ForEach(model.chatMessages) { message in
+                                    ChatMessageRow(message: message)
+                                }
                             }
-                        }
 
-                        Color.clear
-                            .frame(height: 1)
-                            .id(bottomAnchor)
+                            Color.clear
+                                .frame(height: 1)
+                                .id(bottomAnchor)
+                        }
+                        .frame(maxWidth: .infinity, alignment: .leading)
+                        .padding(.horizontal, 24)
+                        .padding(.top, 24)
+                        .padding(.bottom, 20)
                     }
-                    .frame(maxWidth: contentWidth, alignment: .leading)
-                    .frame(maxWidth: .infinity)
-                    .padding(.horizontal, 28)
-                    .padding(.vertical, 32)
-                }
-                .background(Color(nsColor: .windowBackgroundColor))
-                .onAppear {
-                    scrollToBottom(using: proxy, animated: false)
-                }
-                .onChange(of: model.chatMessages.last?.id) { _, _ in
-                    scrollToBottom(using: proxy)
+                    .frame(height: transcriptHeight)
+                    .onAppear {
+                        scrollToBottom(using: proxy, animated: false)
+                    }
+                    .onChange(of: model.chatMessages.last?.id) { _, _ in
+                        scrollToBottom(using: proxy)
+                    }
                 }
             }
 
-            ChatComposer(model: model)
-                .frame(maxWidth: contentWidth)
-                .frame(maxWidth: .infinity)
-                .padding(.horizontal, 28)
-                .padding(.top, 16)
-                .padding(.bottom, 24)
-                .background(.bar)
+            ChatComposer(
+                model: model,
+                focusedField: focusedField,
+                expand: expandChat,
+                send: sendChat
+            )
+            .padding(24)
         }
-        .frame(maxWidth: .infinity, maxHeight: .infinity, alignment: .top)
-        .navigationTitle("Chat")
+        .frame(maxWidth: contentWidth)
+        .frame(maxWidth: .infinity)
+        .background(.regularMaterial, in: RoundedRectangle(cornerRadius: 28, style: .continuous))
+        .overlay {
+            RoundedRectangle(cornerRadius: 28, style: .continuous)
+                .strokeBorder(Color.primary.opacity(0.08))
+        }
+        .shadow(color: Color.black.opacity(0.08), radius: 18, y: 6)
+        .animation(.spring(response: 0.24, dampingFraction: 0.9), value: isExpanded)
+    }
+
+    private func expandChat() {
+        guard isExpanded == false else {
+            return
+        }
+        withAnimation(.spring(response: 0.24, dampingFraction: 0.9)) {
+            isExpanded = true
+        }
+    }
+
+    private func sendChat() {
+        expandChat()
+        model.sendChat()
     }
 
     private func scrollToBottom(using proxy: ScrollViewProxy, animated: Bool = true) {
@@ -138,9 +168,12 @@ private struct CitationStrip: View {
 
 private struct ChatComposer: View {
     @ObservedObject var model: AppModel
+    var focusedField: FocusState<TodayChatDock.FocusField?>.Binding
+    let expand: () -> Void
+    let send: () -> Void
 
     private var canSend: Bool {
-        model.chatInput.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty == false
+        model.chatThread != nil && model.chatInput.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty == false
     }
 
     var body: some View {
@@ -149,6 +182,8 @@ private struct ChatComposer: View {
                 .textFieldStyle(.plain)
                 .font(.body)
                 .lineLimit(1...6)
+                .focused(focusedField, equals: .composer)
+                .onSubmit(send)
                 .padding(.leading, 18)
                 .padding(.trailing, 64)
                 .padding(.vertical, 16)
@@ -173,9 +208,7 @@ private struct ChatComposer: View {
                 .allowsHitTesting(false)
             }
 
-            Button {
-                model.sendChat()
-            } label: {
+            Button(action: send) {
                 Image(systemName: "arrow.up")
                     .font(.system(size: 14, weight: .semibold))
                     .frame(width: 32, height: 32)
@@ -185,6 +218,11 @@ private struct ChatComposer: View {
             .clipShape(Circle())
             .disabled(canSend == false)
             .padding(10)
+        }
+        .onChange(of: focusedField.wrappedValue) { _, newValue in
+            if newValue == .composer {
+                expand()
+            }
         }
     }
 }

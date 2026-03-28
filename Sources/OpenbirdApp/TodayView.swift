@@ -5,36 +5,12 @@ struct TodayView: View {
     @ObservedObject var model: AppModel
     @State private var timelineItems: [TimelineItem] = []
     @State private var isPreparingTimeline = false
+    @State private var isChatExpanded = false
+    @FocusState private var focusedField: TodayChatDock.FocusField?
 
     var body: some View {
         VStack(alignment: .leading, spacing: 20) {
-            HStack {
-                DatePicker("Day", selection: Binding(
-                    get: { model.selectedDay },
-                    set: { model.selectDay($0) }
-                ), displayedComponents: .date)
-                .datePickerStyle(.compact)
-
-                Spacer()
-
-                Button("Inspect Evidence") {
-                    model.isShowingRawLogInspector = true
-                }
-
-                Button {
-                    model.generateTodayJournal()
-                } label: {
-                    HStack(spacing: 8) {
-                        if model.isGeneratingTodayJournal {
-                            ProgressView()
-                                .controlSize(.small)
-                        }
-                        Text(model.isGeneratingTodayJournal ? "Generating…" : "Generate Summary")
-                    }
-                }
-                .buttonStyle(.borderedProminent)
-                .disabled(model.isGeneratingTodayJournal)
-            }
+            header
 
             ScrollView {
                 VStack(alignment: .leading, spacing: 20) {
@@ -61,9 +37,60 @@ struct TodayView: View {
             }
         }
         .padding(28)
-        .navigationTitle("Today")
+        .frame(maxWidth: .infinity, maxHeight: .infinity, alignment: .top)
+        .background(Color(nsColor: .windowBackgroundColor))
+        .safeAreaInset(edge: .bottom, spacing: 0) {
+            TodayChatDock(
+                model: model,
+                isExpanded: $isChatExpanded,
+                focusedField: $focusedField
+            )
+            .padding(.horizontal, 28)
+            .padding(.top, 12)
+            .padding(.bottom, 24)
+            .background(Color(nsColor: .windowBackgroundColor))
+        }
+        .onAppear {
+            handleChatFocusRequestIfNeeded()
+        }
+        .onChange(of: model.shouldFocusChatComposer) { _, _ in
+            handleChatFocusRequestIfNeeded()
+        }
+        .onExitCommand {
+            collapseChat()
+        }
         .task(id: timelinePreparationKey) {
             await prepareTimeline()
+        }
+    }
+
+    private var header: some View {
+        HStack {
+            DatePicker("Day", selection: Binding(
+                get: { model.selectedDay },
+                set: { model.selectDay($0) }
+            ), displayedComponents: .date)
+            .datePickerStyle(.compact)
+
+            Spacer()
+
+            Button("Inspect Evidence") {
+                model.isShowingRawLogInspector = true
+            }
+
+            Button {
+                model.generateTodayJournal()
+            } label: {
+                HStack(spacing: 8) {
+                    if model.isGeneratingTodayJournal {
+                        ProgressView()
+                            .controlSize(.small)
+                    }
+                    Text(model.isGeneratingTodayJournal ? "Generating…" : "Generate Summary")
+                }
+            }
+            .buttonStyle(.borderedProminent)
+            .disabled(model.isGeneratingTodayJournal)
         }
     }
 
@@ -114,6 +141,27 @@ struct TodayView: View {
             rawEventLastID: model.rawEvents.last?.id,
             installedApplicationCount: model.installedApplications.count
         )
+    }
+
+    private func handleChatFocusRequestIfNeeded() {
+        guard model.shouldFocusChatComposer else {
+            return
+        }
+        withAnimation(.spring(response: 0.24, dampingFraction: 0.9)) {
+            isChatExpanded = true
+        }
+        focusedField = .composer
+        model.acknowledgeChatFocusRequest()
+    }
+
+    private func collapseChat() {
+        guard isChatExpanded else {
+            return
+        }
+        focusedField = nil
+        withAnimation(.spring(response: 0.24, dampingFraction: 0.9)) {
+            isChatExpanded = false
+        }
     }
 
     @MainActor

@@ -7,23 +7,6 @@ final class AppModel: ObservableObject {
     private static let automaticUpdateCheckInterval: TimeInterval = 60 * 60 * 12
     private static let dismissedUpdateVersionKey = "openbird.dismissedUpdateVersion"
     private static let lastUpdateCheckDateKey = "openbird.lastUpdateCheckDate"
-
-    enum SidebarItem: String, CaseIterable, Identifiable {
-        case today
-        case chat
-
-        var id: String { rawValue }
-        var title: String {
-            switch self {
-            case .today:
-                return "Today"
-            case .chat:
-                return "Chat"
-            }
-        }
-    }
-
-    @Published var selection: SidebarItem = .today
     @Published var settings = AppSettings()
     @Published var providerConfigs: [ProviderConfig] = []
     @Published var exclusions: [ExclusionRule] = []
@@ -47,6 +30,7 @@ final class AppModel: ObservableObject {
     @Published var isInstallingUpdate = false
     @Published var isLoadingInstalledApplications = false
     @Published var isShowingRawLogInspector = false
+    @Published private(set) var shouldFocusChatComposer = false
     @Published private(set) var accessibilityTrusted = false
 
     let permissionsService = PermissionsService()
@@ -315,6 +299,14 @@ final class AppModel: ObservableObject {
 
     func handleAppDidBecomeActive() {
         checkForUpdatesIfNeeded()
+    }
+
+    func requestChatFocus() {
+        shouldFocusChatComposer = true
+    }
+
+    func acknowledgeChatFocusRequest() {
+        shouldFocusChatComposer = false
     }
 
     func installAvailableUpdate() {
@@ -776,7 +768,6 @@ final class AppModel: ObservableObject {
                     )
                 )
                 todayJournal = journal
-                selection = .today
             } catch {
                 errorMessage = error.localizedDescription
             }
@@ -797,7 +788,6 @@ final class AppModel: ObservableObject {
                 )
                 _ = try await chatService.answer(query)
                 chatMessages = try await store.loadMessages(threadID: thread.id)
-                selection = .chat
             } catch {
                 errorMessage = error.localizedDescription
             }

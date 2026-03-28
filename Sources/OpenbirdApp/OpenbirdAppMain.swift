@@ -1,3 +1,4 @@
+import AppKit
 import SwiftUI
 
 private enum OpenbirdSceneID {
@@ -33,12 +34,22 @@ struct OpenbirdAppMain: App {
 
 private struct OpenbirdAppCommands: Commands {
     @ObservedObject var model: AppModel
+    @Environment(\.openWindow) private var openWindow
 
     var body: some Commands {
         CommandGroup(after: .appInfo) {
             Button("Check for Updates…") {
                 model.checkForUpdates()
             }
+        }
+
+        CommandMenu("Chat") {
+            Button("Focus Chat") {
+                openWindow(id: OpenbirdSceneID.main)
+                model.requestChatFocus()
+                NSApp.activate(ignoringOtherApps: true)
+            }
+            .keyboardShortcut("j", modifiers: [.command])
         }
     }
 }

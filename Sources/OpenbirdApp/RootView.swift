@@ -8,24 +8,7 @@ struct RootView: View {
     @State private var dismissedGoogleDocsHintEventID: String?
 
     var body: some View {
-        NavigationSplitView {
-            List(selection: $model.selection) {
-                Label("Today", systemImage: "sun.max")
-                    .tag(AppModel.SidebarItem.today)
-                Label("Chat", systemImage: "bubble.left.and.bubble.right")
-                    .tag(AppModel.SidebarItem.chat)
-            }
-            .navigationTitle("Openbird")
-        } detail: {
-            Group {
-                switch model.selection {
-                case .today:
-                    TodayView(model: model)
-                case .chat:
-                    ChatView(model: model)
-                }
-            }
-        }
+        TodayView(model: model)
         .toolbar {
             ToolbarItem(placement: .automatic) {
                 CaptureToolbarButton(model: model)
