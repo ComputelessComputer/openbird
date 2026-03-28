@@ -55,10 +55,24 @@ struct TodayChatDock: View {
                 .padding(.bottom, 20)
             }
             .frame(height: transcriptHeight)
-            .background(Color(nsColor: .controlBackgroundColor), in: RoundedRectangle(cornerRadius: 24, style: .continuous))
+            .background {
+                RoundedRectangle(cornerRadius: 24, style: .continuous)
+                    .fill(.regularMaterial)
+                    .shadow(color: Color.black.opacity(0.18), radius: 32, y: 20)
+                    .shadow(color: Color.black.opacity(0.08), radius: 10, y: 4)
+            }
             .overlay {
                 RoundedRectangle(cornerRadius: 24, style: .continuous)
-                    .strokeBorder(Color.primary.opacity(0.08))
+                    .strokeBorder(
+                        LinearGradient(
+                            colors: [
+                                Color.white.opacity(0.62),
+                                Color.white.opacity(0.18)
+                            ],
+                            startPoint: .topLeading,
+                            endPoint: .bottomTrailing
+                        )
+                    )
             }
             .onAppear {
                 scrollToBottom(using: proxy, animated: false)
@@ -146,7 +160,11 @@ private struct ChatMessageRow: View {
         .frame(maxWidth: messageWidth, alignment: .leading)
         .padding(.horizontal, 18)
         .padding(.vertical, 16)
-        .background(Color.accentColor.opacity(0.13), in: RoundedRectangle(cornerRadius: 24, style: .continuous))
+        .background(Color.accentColor.opacity(0.16), in: RoundedRectangle(cornerRadius: 24, style: .continuous))
+        .overlay {
+            RoundedRectangle(cornerRadius: 24, style: .continuous)
+                .strokeBorder(Color.white.opacity(0.16))
+        }
     }
 }
 
@@ -162,7 +180,7 @@ private struct CitationStrip: View {
                         .foregroundStyle(.secondary)
                         .padding(.horizontal, 10)
                         .padding(.vertical, 6)
-                        .background(Color(nsColor: .controlBackgroundColor), in: Capsule())
+                        .background(.thinMaterial, in: Capsule())
                 }
             }
         }
@@ -192,11 +210,22 @@ private struct ChatComposer: View {
                 .padding(.vertical, 16)
                 .background(
                     RoundedRectangle(cornerRadius: 24, style: .continuous)
-                        .fill(Color(nsColor: .controlBackgroundColor))
+                        .fill(.regularMaterial)
+                        .shadow(color: Color.black.opacity(0.14), radius: 24, y: 14)
+                        .shadow(color: Color.black.opacity(0.06), radius: 8, y: 3)
                 )
                 .overlay(
                     RoundedRectangle(cornerRadius: 24, style: .continuous)
-                        .strokeBorder(Color.primary.opacity(0.08))
+                        .strokeBorder(
+                            LinearGradient(
+                                colors: [
+                                    Color.white.opacity(0.62),
+                                    Color.white.opacity(0.18)
+                                ],
+                                startPoint: .topLeading,
+                                endPoint: .bottomTrailing
+                            )
+                        )
                 )
 
             if model.chatInput.isEmpty {

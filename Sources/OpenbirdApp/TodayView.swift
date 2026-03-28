@@ -7,6 +7,8 @@ struct TodayView: View {
     @State private var isPreparingTimeline = false
     @State private var isChatExpanded = false
     @FocusState private var focusedField: TodayChatDock.FocusField?
+    private let collapsedChatClearance: CGFloat = 92
+    private let expandedChatClearance: CGFloat = 420
     private static let selectedDayMonthFormatter: DateFormatter = {
         let formatter = DateFormatter()
         formatter.calendar = .current
@@ -48,6 +50,7 @@ struct TodayView: View {
                         timelineCard
                     }
                 }
+                .padding(.bottom, chatClearance)
                 .frame(maxWidth: 860, alignment: .leading)
                 .frame(maxWidth: .infinity, alignment: .center)
             }
@@ -65,7 +68,7 @@ struct TodayView: View {
                     }
             }
         }
-        .safeAreaInset(edge: .bottom, spacing: 0) {
+        .overlay(alignment: .bottom) {
             TodayChatDock(
                 model: model,
                 isExpanded: $isChatExpanded,
@@ -200,6 +203,10 @@ struct TodayView: View {
         withAnimation(.spring(response: 0.24, dampingFraction: 0.9)) {
             isChatExpanded = false
         }
+    }
+
+    private var chatClearance: CGFloat {
+        isChatExpanded ? expandedChatClearance : collapsedChatClearance
     }
 
     private var selectedDayTitle: String {
