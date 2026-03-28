@@ -114,6 +114,7 @@ struct TodayView: View {
                 .help("Next day")
                 .disabled(isShowingToday)
             }
+            .fixedSize()
 
             Button("Inspect Evidence") {
                 model.isShowingRawLogInspector = true
