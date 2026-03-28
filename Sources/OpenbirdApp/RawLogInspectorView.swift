@@ -7,7 +7,7 @@ struct RawLogInspectorView: View {
 
     var body: some View {
         NavigationStack {
-            List(filteredEvents) { event in
+            List(groupedEvents) { event in
                 HStack(alignment: .top, spacing: 12) {
                     ActivityAppIcon(bundleId: event.bundleId, appName: event.appName)
                         .padding(.top, 2)
@@ -21,6 +21,10 @@ struct RawLogInspectorView: View {
                             if event.isExcluded {
                                 Label("Excluded", systemImage: "eye.slash")
                                     .font(.caption)
+                            } else if event.sourceEventCount > 1 {
+                                Text("\(event.sourceEventCount) grouped logs")
+                                    .font(.caption)
+                                    .foregroundStyle(.secondary)
                             }
                         }
                         Text(event.appName)
@@ -29,7 +33,7 @@ struct RawLogInspectorView: View {
                             Text(detailTitle)
                         }
                         if let url = event.url {
-                            Text(url)
+                            Text(ActivityEvidencePreprocessor.summarizedURL(from: url) ?? url)
                                 .font(.caption)
                                 .foregroundStyle(.secondary)
                         }
@@ -55,17 +59,7 @@ struct RawLogInspectorView: View {
         .frame(minWidth: 900, minHeight: 540)
     }
 
-    private var filteredEvents: [ActivityEvent] {
-        model.rawEvents.filter { event in
-            if event.bundleId == "com.apple.loginwindow" || event.appName.lowercased() == "loginwindow" {
-                return false
-            }
-
-            let hasUsefulText = event.visibleText.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty == false
-            let hasUsefulURL = (event.url?.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty == false)
-            let hasSpecificTitle = (event.detailTitle?.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty == false)
-
-            return hasUsefulText || hasUsefulURL || hasSpecificTitle
-        }
+    private var groupedEvents: [GroupedActivityEvent] {
+        ActivityEvidencePreprocessor.groupedMeaningfulEvents(from: model.rawEvents)
     }
 }

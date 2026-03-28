@@ -3,17 +3,36 @@ import Foundation
 public actor JournalGenerator {
     private let store: OpenbirdStore
 
+    private struct PreparedSection {
+        let heading: String
+        let timeRange: String
+        let bullets: [String]
+        let groupedEvents: [GroupedActivityEvent]
+
+        var journalSection: JournalSection {
+            JournalSection(
+                heading: heading,
+                timeRange: timeRange,
+                bullets: bullets,
+                sourceEventIDs: groupedEvents.flatMap(\.sourceEventIDs)
+            )
+        }
+    }
+
     public init(store: OpenbirdStore) {
         self.store = store
     }
 
     public func generate(request: JournalGenerationRequest) async throws -> DailyJournal {
         let dayRange = Calendar.current.dayRange(for: request.date)
-        let events = try await store.loadActivityEvents(in: dayRange).filter(isMeaningfulEvent)
-        let trimmedEvents = Array(events.prefix(request.maxSourceEvents))
-        let sections = buildSections(from: trimmedEvents)
-        let eventsByID = Dictionary(uniqueKeysWithValues: trimmedEvents.map { ($0.id, $0) })
-        let heuristicMarkdown = renderMarkdown(for: request.date, sections: sections, events: trimmedEvents)
+        let events = try await store.loadActivityEvents(in: dayRange)
+        let groupedEvents = Array(
+            ActivityEvidencePreprocessor.groupedMeaningfulEvents(from: events)
+                .prefix(request.maxSourceEvents)
+        )
+        let preparedSections = buildSections(from: groupedEvents)
+        let sections = preparedSections.map(\.journalSection)
+        let heuristicMarkdown = renderMarkdown(for: request.date, sections: preparedSections)
 
         let providerConfig = try await activeProviderIfAvailable(id: request.providerID)
         let markdown: String
@@ -42,7 +61,7 @@ public actor JournalGenerator {
                 Day: \(OpenbirdDateFormatting.weekdayFormatter.string(from: request.date))
 
                 Evidence:
-                \(sections.map { sectionPrompt($0, eventsByID: eventsByID) }.joined(separator: "\n\n"))
+                \(preparedSections.map(sectionPrompt).joined(separator: "\n\n"))
                 """
                 let response = try await provider.chat(
                     request: ProviderChatRequest(
@@ -83,9 +102,9 @@ public actor JournalGenerator {
         return configs.first
     }
 
-    private func buildSections(from events: [ActivityEvent]) -> [JournalSection] {
+    private func buildSections(from events: [GroupedActivityEvent]) -> [PreparedSection] {
         guard events.isEmpty == false else { return [] }
-        var groups: [[ActivityEvent]] = [[events[0]]]
+        var groups: [[GroupedActivityEvent]] = [[events[0]]]
         for event in events.dropFirst() {
             guard let previous = groups[groups.count - 1].last else { continue }
             let gap = event.startedAt.timeIntervalSince(previous.endedAt)
@@ -105,21 +124,21 @@ public actor JournalGenerator {
                 .prefix(4)
             let start = OpenbirdDateFormatting.timeString(for: group.first?.startedAt ?? Date())
             let end = OpenbirdDateFormatting.timeString(for: group.last?.endedAt ?? Date())
-            return JournalSection(
+            return PreparedSection(
                 heading: dominant,
                 timeRange: "\(start) - \(end)",
                 bullets: Array(bullets),
-                sourceEventIDs: group.map(\.id)
+                groupedEvents: group
             )
         }
     }
 
-    private func makeBullet(for event: ActivityEvent) -> String {
+    private func makeBullet(for event: GroupedActivityEvent) -> String {
         var pieces = [event.appName]
         if let detailTitle = event.detailTitle {
             pieces.append(detailTitle)
         }
-        if let urlSummary = summarizedURL(from: event.url) {
+        if let urlSummary = ActivityEvidencePreprocessor.summarizedURL(from: event.url) {
             pieces.append(urlSummary)
         }
         if event.excerpt.isEmpty == false {
@@ -128,12 +147,8 @@ public actor JournalGenerator {
         return pieces.deduplicatedByNormalizedText().joined(separator: " • ")
     }
 
-    private func sectionPrompt(
-        _ section: JournalSection,
-        eventsByID: [String: ActivityEvent]
-    ) -> String {
-        let evidence = section.sourceEventIDs
-            .compactMap { eventsByID[$0] }
+    private func sectionPrompt(_ section: PreparedSection) -> String {
+        let evidence = section.groupedEvents
             .map(eventPrompt)
             .joined(separator: "\n")
 
@@ -145,7 +160,7 @@ public actor JournalGenerator {
         """
     }
 
-    private func eventPrompt(_ event: ActivityEvent) -> String {
+    private func eventPrompt(_ event: GroupedActivityEvent) -> String {
         var pieces = [
             "\(OpenbirdDateFormatting.timeString(for: event.startedAt))-\(OpenbirdDateFormatting.timeString(for: event.endedAt))",
             event.appName,
@@ -155,7 +170,7 @@ public actor JournalGenerator {
             pieces.append(detailTitle)
         }
 
-        if let urlSummary = summarizedURL(from: event.url) {
+        if let urlSummary = ActivityEvidencePreprocessor.summarizedURL(from: event.url) {
             pieces.append(urlSummary)
         }
 
@@ -163,26 +178,29 @@ public actor JournalGenerator {
             pieces.append(event.excerpt)
         }
 
+        if event.sourceEventCount > 1 {
+            pieces.append("\(event.sourceEventCount) grouped logs")
+        }
+
         return "- " + pieces.joined(separator: " | ")
     }
 
-    private func renderMarkdown(for date: Date, sections: [JournalSection], events: [ActivityEvent]) -> String {
+    private func renderMarkdown(for date: Date, sections: [PreparedSection]) -> String {
         guard sections.isEmpty == false else {
             return "No meaningful activity captured yet for \(OpenbirdDateFormatting.weekdayFormatter.string(from: date))."
         }
 
-        let eventsByID = Dictionary(uniqueKeysWithValues: events.map { ($0.id, $0) })
-        let appCount = Set(events.map(\.appName)).count
+        let appCount = Set(sections.flatMap { $0.groupedEvents.map(\.appName) }).count
         var markdown = "Stitched together from your local activity logs: \(sections.count) section\(sections.count == 1 ? "" : "s") across \(appCount) app\(appCount == 1 ? "" : "s") on \(OpenbirdDateFormatting.weekdayFormatter.string(from: date)).\n\n"
         for section in sections {
-            markdown += "## \(sectionHeading(for: section, eventsByID: eventsByID))\n\n"
-            markdown += sectionNarrative(for: section, eventsByID: eventsByID)
+            markdown += "## \(sectionHeading(for: section))\n\n"
+            markdown += sectionNarrative(for: section)
             markdown += "\n\n"
         }
         return markdown.trimmingCharacters(in: .whitespacesAndNewlines)
     }
 
-    private func preferredHeading(in group: [ActivityEvent]) -> String {
+    private func preferredHeading(in group: [GroupedActivityEvent]) -> String {
         guard let appName = group.first?.appName else { return "Activity" }
 
         let ranked = group.reduce(into: [String: Int]()) { counts, event in
@@ -202,44 +220,13 @@ public actor JournalGenerator {
         return ranked.max(by: { $0.value < $1.value })?.key ?? appName
     }
 
-    private func summarizedURL(from urlString: String?) -> String? {
-        guard let urlString,
-              urlString.isEmpty == false
-        else {
-            return nil
-        }
-
-        guard let components = URLComponents(string: urlString),
-              let host = components.host
-        else {
-            return String(urlString.prefix(80))
-        }
-
-        let normalizedHost = host.replacingOccurrences(of: "www.", with: "")
-        let path = components.path == "/" ? "" : components.path
-        let summary = normalizedHost + path
-
-        if summary.isEmpty {
-            return normalizedHost
-        }
-
-        return summary.count > 80 ? String(summary.prefix(80)) + "…" : summary
+    private func sectionHeading(for section: PreparedSection) -> String {
+        "\(section.timeRange) - \(displayTopic(for: section))"
     }
 
-    private func sectionHeading(
-        for section: JournalSection,
-        eventsByID: [String: ActivityEvent]
-    ) -> String {
-        "\(section.timeRange) - \(displayTopic(for: section, eventsByID: eventsByID))"
-    }
-
-    private func sectionNarrative(
-        for section: JournalSection,
-        eventsByID: [String: ActivityEvent]
-    ) -> String {
-        let events = section.sourceEventIDs.compactMap { eventsByID[$0] }
-        let apps = Array(events.map(\.appName).deduplicatedByNormalizedText())
-        let topic = displayTopic(for: section, eventsByID: eventsByID)
+    private func sectionNarrative(for section: PreparedSection) -> String {
+        let apps = Array(section.groupedEvents.map(\.appName).deduplicatedByNormalizedText())
+        let topic = displayTopic(for: section)
         let topicKey = topic.normalizedComparisonKey
         let appKeys = Set(apps.map(\.normalizedComparisonKey))
 
@@ -252,7 +239,7 @@ public actor JournalGenerator {
             sentences.append("Spent this block on \(topic) in \(naturalLanguageList(apps)).")
         }
 
-        let highlights = sectionHighlights(for: section, events: events)
+        let highlights = sectionHighlights(for: section)
         if highlights.isEmpty == false {
             sentences.append("Main notes: \(highlights.joined(separator: "; ")).")
         }
@@ -260,26 +247,18 @@ public actor JournalGenerator {
         return sentences.joined(separator: " ")
     }
 
-    private func displayTopic(
-        for section: JournalSection,
-        eventsByID: [String: ActivityEvent]
-    ) -> String {
+    private func displayTopic(for section: PreparedSection) -> String {
         let topic = section.heading.trimmingCharacters(in: .whitespacesAndNewlines)
         guard topic.isEmpty == false else {
-            return section.sourceEventIDs
-                .compactMap { eventsByID[$0]?.appName }
-                .first ?? "Activity"
+            return section.groupedEvents.first?.appName ?? "Activity"
         }
 
         return topic
     }
 
-    private func sectionHighlights(
-        for section: JournalSection,
-        events: [ActivityEvent]
-    ) -> [String] {
+    private func sectionHighlights(for section: PreparedSection) -> [String] {
         let excluded = Set(
-            ([section.heading] + events.map(\.appName))
+            ([section.heading] + section.groupedEvents.map(\.appName))
                 .map(\.normalizedComparisonKey)
         )
 
@@ -308,18 +287,6 @@ public actor JournalGenerator {
             let prefix = values.dropLast().joined(separator: ", ")
             return "\(prefix), and \(values[values.count - 1])"
         }
-    }
-
-    private func isMeaningfulEvent(_ event: ActivityEvent) -> Bool {
-        if event.bundleId == "com.apple.loginwindow" || event.appName.normalizedComparisonKey == "loginwindow" {
-            return false
-        }
-
-        let hasUsefulText = event.visibleText.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty == false
-        let hasUsefulURL = (event.url?.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty == false)
-        let hasSpecificTitle = (event.detailTitle?.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty == false)
-
-        return hasUsefulText || hasUsefulURL || hasSpecificTitle
     }
 }
 

@@ -119,7 +119,8 @@ struct TodayView: View {
     @MainActor
     private func prepareTimeline() async {
         let journalSections = model.todayJournal?.sections ?? []
-        let rawEvents = model.rawEvents.filter(isRelevantTimelineEvent)
+        let rawEvents = model.rawEvents.filter { ActivityEvidencePreprocessor.isMeaningful($0) }
+        let groupedRawEvents = ActivityEvidencePreprocessor.groupedMeaningfulEvents(from: model.rawEvents)
         let installedApplications = model.installedApplications
 
         isPreparingTimeline = true
@@ -150,14 +151,14 @@ struct TodayView: View {
                 }
             }
 
-            return rawEvents
+            return groupedRawEvents
                 .filter { $0.isExcluded == false }
                 .map { event in
                     let bundlePath = applicationsByBundleID[event.bundleId.lowercased()]?.bundlePath
                     let bulletCandidates: [String] = [
-                        event.appName,
-                        event.url,
+                        ActivityEvidencePreprocessor.summarizedURL(from: event.url),
                         event.excerpt.isEmpty ? nil : event.excerpt,
+                        event.sourceEventCount > 1 ? "\(event.sourceEventCount) grouped logs" : nil,
                     ].compactMap { value in
                         guard let value else { return nil }
                         let trimmed = value.trimmingCharacters(in: .whitespacesAndNewlines)
@@ -183,18 +184,6 @@ struct TodayView: View {
 
         timelineItems = items
         isPreparingTimeline = false
-    }
-
-    private func isRelevantTimelineEvent(_ event: ActivityEvent) -> Bool {
-        if event.bundleId == "com.apple.loginwindow" || event.appName.lowercased() == "loginwindow" {
-            return false
-        }
-
-        let hasUsefulText = event.visibleText.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty == false
-        let hasUsefulURL = (event.url?.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty == false)
-        let hasSpecificTitle = (event.detailTitle?.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty == false)
-
-        return hasUsefulText || hasUsefulURL || hasSpecificTitle
     }
 }
 

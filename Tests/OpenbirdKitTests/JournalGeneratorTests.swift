@@ -211,4 +211,118 @@ struct JournalGeneratorTests {
         #expect(journal.markdown.contains("loginwindow") == false)
         #expect(journal.markdown.contains("Codex") == false)
     }
+
+    @Test func groupsNoisyChatSnapshotsBeforeSummarizing() throws {
+        let start = Calendar.current.startOfDay(for: Date()).addingTimeInterval(8 * 3600)
+        let events = [
+            ActivityEvent(
+                startedAt: start,
+                endedAt: start.addingTimeInterval(30),
+                bundleId: "com.kakao.KakaoTalkMac",
+                appName: "KakaoTalk",
+                windowTitle: "Alice",
+                url: nil,
+                visibleText: "Alice Profile 9:31 PM See you there Enter a message Search Voice Call Video Call Menu",
+                source: "accessibility",
+                contentHash: "chat-1",
+                isExcluded: false
+            ),
+            ActivityEvent(
+                startedAt: start.addingTimeInterval(31),
+                endedAt: start.addingTimeInterval(60),
+                bundleId: "com.kakao.KakaoTalkMac",
+                appName: "KakaoTalk",
+                windowTitle: "Alice",
+                url: nil,
+                visibleText: "Alice 9:39 PM See you there tomorrow Enter a message Search Menu",
+                source: "accessibility",
+                contentHash: "chat-2",
+                isExcluded: false
+            ),
+            ActivityEvent(
+                startedAt: start.addingTimeInterval(61),
+                endedAt: start.addingTimeInterval(90),
+                bundleId: "com.kakao.KakaoTalkMac",
+                appName: "KakaoTalk",
+                windowTitle: "Alice",
+                url: nil,
+                visibleText: "Alice 10:23 PM See you there tomorrow",
+                source: "accessibility",
+                contentHash: "chat-3",
+                isExcluded: false
+            ),
+        ]
+
+        let grouped = ActivityEvidencePreprocessor.groupedMeaningfulEvents(from: events)
+        let firstGroup = try #require(grouped.first)
+
+        #expect(grouped.count == 1)
+        #expect(firstGroup.sourceEventCount == 3)
+        #expect(firstGroup.excerpt.contains("Enter a message") == false)
+        #expect(firstGroup.excerpt.contains("Voice Call") == false)
+        #expect(firstGroup.excerpt.contains("See you there"))
+    }
+
+    @Test func generatesDeduplicatedSectionsFromGroupedEvidence() async throws {
+        let databaseURL = FileManager.default.temporaryDirectory.appendingPathComponent(UUID().uuidString).appendingPathExtension("sqlite")
+        let store = try OpenbirdStore(databaseURL: databaseURL)
+        let generator = JournalGenerator(store: store)
+
+        let start = Calendar.current.startOfDay(for: Date()).addingTimeInterval(8 * 3600)
+        let events = [
+            ActivityEvent(
+                startedAt: start,
+                endedAt: start.addingTimeInterval(30),
+                bundleId: "com.kakao.KakaoTalkMac",
+                appName: "KakaoTalk",
+                windowTitle: "Alice",
+                url: nil,
+                visibleText: "Alice Profile 9:31 PM See you there Enter a message Search Voice Call Video Call Menu",
+                source: "accessibility",
+                contentHash: "chat-a",
+                isExcluded: false
+            ),
+            ActivityEvent(
+                startedAt: start.addingTimeInterval(31),
+                endedAt: start.addingTimeInterval(60),
+                bundleId: "com.kakao.KakaoTalkMac",
+                appName: "KakaoTalk",
+                windowTitle: "Alice",
+                url: nil,
+                visibleText: "Alice 9:39 PM See you there tomorrow Enter a message Search Menu",
+                source: "accessibility",
+                contentHash: "chat-b",
+                isExcluded: false
+            ),
+            ActivityEvent(
+                startedAt: start.addingTimeInterval(90),
+                endedAt: start.addingTimeInterval(180),
+                bundleId: "com.kakao.KakaoTalkMac",
+                appName: "KakaoTalk",
+                windowTitle: "Alice",
+                url: nil,
+                visibleText: "Alice 10:23 PM Shared the pickup plan",
+                source: "accessibility",
+                contentHash: "chat-c",
+                isExcluded: false
+            ),
+        ]
+
+        for event in events {
+            try await store.saveActivityEvent(event)
+        }
+
+        let journal = try await generator.generate(
+            request: JournalGenerationRequest(
+                date: start,
+                providerID: nil
+            )
+        )
+
+        #expect(journal.sections.count == 1)
+        #expect(journal.sections.first?.sourceEventIDs.count == 3)
+        #expect(journal.sections.first?.bullets.count == 1)
+        #expect(journal.sections.first?.bullets.first?.contains("Enter a message") == false)
+        #expect(journal.sections.first?.bullets.first?.contains("Voice Call") == false)
+    }
 }
