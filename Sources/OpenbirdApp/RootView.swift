@@ -93,13 +93,20 @@ private struct CaptureToolbarButton: View {
     @ObservedObject var model: AppModel
     @State private var isHovering = false
 
+    private var isActivelyCapturing: Bool {
+        guard model.settings.capturePaused == false else { return false }
+        guard model.isCollectorActiveElsewhere == false else { return false }
+        guard model.isCollectorHeartbeatFresh else { return false }
+        return model.settings.collectorStatus == "running"
+    }
+
     private var statusColor: Color {
         if model.settings.capturePaused { return .orange }
         if model.isCollectorActiveElsewhere { return .secondary }
         if model.isCollectorHeartbeatFresh == false { return .secondary }
         switch model.settings.collectorStatus {
         case "running":
-            return .green
+            return .blue
         case "error":
             return .red
         default:
@@ -125,9 +132,10 @@ private struct CaptureToolbarButton: View {
         } label: {
             HStack(spacing: 8) {
                 ZStack {
-                    Circle()
-                        .fill(statusColor)
-                        .frame(width: 8, height: 8)
+                    Image(systemName: "circle.fill")
+                        .font(.system(size: 8))
+                        .foregroundStyle(statusColor)
+                        .symbolEffect(.pulse, isActive: isActivelyCapturing && isHovering == false)
                         .opacity(isHovering ? 0 : 1)
                     Image(systemName: hoverSymbolName)
                         .font(.system(size: 10, weight: .semibold))
