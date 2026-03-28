@@ -99,9 +99,14 @@ private struct OpenbirdStatusMenu: View {
 }
 
 private struct OpenbirdStatusMenuLabel: View {
+    private let iconSize: CGFloat = 18
+
     var body: some View {
         Image(nsImage: templateApplicationIcon)
             .renderingMode(.template)
+            .resizable()
+            .scaledToFit()
+            .frame(width: iconSize, height: iconSize)
             .accessibilityLabel("Openbird")
     }
 
@@ -109,6 +114,7 @@ private struct OpenbirdStatusMenuLabel: View {
         let icon = (NSApp.applicationIconImage?.copy() as? NSImage)
             ?? NSImage(systemSymbolName: "bird", accessibilityDescription: "Openbird")
             ?? NSImage()
+        icon.size = NSSize(width: iconSize, height: iconSize)
         icon.isTemplate = true
         return icon
     }
