@@ -116,10 +116,6 @@ struct TodayView: View {
             }
             .fixedSize()
 
-            Button("Inspect Evidence") {
-                model.isShowingRawLogInspector = true
-            }
-
             Button {
                 model.generateTodayJournal()
             } label: {
@@ -128,7 +124,7 @@ struct TodayView: View {
                         ProgressView()
                             .controlSize(.small)
                     }
-                    Text(model.isGeneratingTodayJournal ? "Generating…" : "Generate Summary")
+                    Text(model.isGeneratingTodayJournal ? "Refreshing…" : "Refresh")
                 }
             }
             .buttonStyle(.borderedProminent)
