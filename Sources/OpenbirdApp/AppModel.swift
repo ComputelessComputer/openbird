@@ -45,6 +45,7 @@ final class AppModel: ObservableObject {
     @Published private(set) var availableProviderModels: [ProviderModelInfo] = []
     @Published var errorMessage: String?
     @Published var isBusy = false
+    @Published var isGeneratingTodayJournal = false
     @Published var isCheckingForUpdates = false
     @Published var isInstallingUpdate = false
     @Published var isLoadingInstalledApplications = false
@@ -755,7 +756,13 @@ final class AppModel: ObservableObject {
     }
 
     func generateTodayJournal() {
+        guard isGeneratingTodayJournal == false else {
+            return
+        }
+
+        isGeneratingTodayJournal = true
         Task {
+            defer { isGeneratingTodayJournal = false }
             do {
                 let journal = try await journalGenerator.generate(
                     request: JournalGenerationRequest(
