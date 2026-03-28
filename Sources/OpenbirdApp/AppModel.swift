@@ -45,6 +45,7 @@ final class AppModel: ObservableObject {
     private let updateService: UpdateService
     private let appUpdater: AppUpdater
     private let userDefaults: UserDefaults
+    private var quitApplication: () -> Void = { NSApp.terminate(nil) }
     private var providerConnectionTask: Task<Void, Never>?
     private var providerSaveTask: Task<Void, Never>?
     private var updateCheckTask: Task<Void, Never>?
@@ -305,6 +306,10 @@ final class AppModel: ObservableObject {
         shouldFocusChatComposer = true
     }
 
+    func setQuitApplicationHandler(_ handler: @escaping () -> Void) {
+        quitApplication = handler
+    }
+
     func acknowledgeChatFocusRequest() {
         shouldFocusChatComposer = false
     }
@@ -330,7 +335,7 @@ final class AppModel: ObservableObject {
                     update: availableUpdate,
                     appBundleURL: Bundle.main.bundleURL
                 )
-                NSApp.terminate(nil)
+                quitApplication()
             } catch {
                 isInstallingUpdate = false
                 updateStatusMessage = "Openbird \(availableUpdate.version) is available."

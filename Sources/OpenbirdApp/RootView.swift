@@ -4,6 +4,8 @@ import SwiftUI
 
 struct RootView: View {
     @ObservedObject var model: AppModel
+    let appLifecycle: AppLifecycleController
+    @Environment(\.openWindow) private var openWindow
     private let captureStatusTimer = Timer.publish(every: 1, on: .main, in: .common).autoconnect()
     @State private var dismissedGoogleDocsHintEventID: String?
 
@@ -35,6 +37,7 @@ struct RootView: View {
             }
         }
         .onAppear {
+            configureAppLifecycle()
             Task { await model.refreshCollectorState() }
         }
         .onReceive(captureStatusTimer) { _ in
@@ -65,6 +68,16 @@ struct RootView: View {
             return nil
         }
         return hint
+    }
+
+    private func configureAppLifecycle() {
+        appLifecycle.configure {
+            openWindow(id: OpenbirdSceneID.main)
+            NSApp.activate(ignoringOtherApps: true)
+        }
+        model.setQuitApplicationHandler {
+            appLifecycle.quitCompletely()
+        }
     }
 }
 
