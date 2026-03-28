@@ -25,9 +25,11 @@ public actor JournalGenerator {
 
                 Requirements:
                 - Return markdown only.
+                - Do not include a document title or repeat the date as a top heading.
                 - Start with a short 1-2 sentence overview.
                 - Then produce 3-6 titled sections in chronological order.
                 - Each section should have 1-3 concise bullets.
+                - Leave a blank line between the overview, each section heading, and each bullet list.
                 - Synthesize the evidence instead of echoing it verbatim.
                 - Prefer meaningful work descriptions over app chrome, repeated browser controls, toolbar labels, or duplicated URLs.
                 - Mention apps, repos, people, channels, or pages only when they help identify the work.
@@ -131,14 +133,13 @@ public actor JournalGenerator {
 
     private func renderMarkdown(for date: Date, sections: [JournalSection], events: [ActivityEvent]) -> String {
         guard sections.isEmpty == false else {
-            return "# \(OpenbirdDateFormatting.weekdayFormatter.string(from: date)) Summary\n\nNo activity captured yet."
+            return "No activity captured yet for \(OpenbirdDateFormatting.weekdayFormatter.string(from: date))."
         }
 
         let appCount = Set(events.map(\.appName)).count
-        var markdown = "# \(OpenbirdDateFormatting.weekdayFormatter.string(from: date)) Summary\n\n"
-        markdown += "Captured \(sections.count) focus block\(sections.count == 1 ? "" : "s") across \(appCount) app\(appCount == 1 ? "" : "s").\n\n"
+        var markdown = "Captured \(sections.count) focus block\(sections.count == 1 ? "" : "s") across \(appCount) app\(appCount == 1 ? "" : "s") on \(OpenbirdDateFormatting.weekdayFormatter.string(from: date)).\n\n"
         for section in sections {
-            markdown += "## \(section.timeRange) — \(section.heading)\n"
+            markdown += "## \(section.timeRange) — \(section.heading)\n\n"
             markdown += section.bullets.map { "- \($0)" }.joined(separator: "\n")
             markdown += "\n\n"
         }

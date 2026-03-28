@@ -104,24 +104,11 @@ struct TodayView: View {
 
     private func summaryCard(_ markdown: String) -> some View {
         VStack(alignment: .leading, spacing: 0) {
-            markdownView(markdown)
+            SummaryMarkdownView(markdown: markdown)
         }
         .padding(24)
         .frame(maxWidth: .infinity, alignment: .leading)
         .background(Color(nsColor: .controlBackgroundColor), in: RoundedRectangle(cornerRadius: 24))
-    }
-
-    @ViewBuilder
-    private func markdownView(_ markdown: String) -> some View {
-        if let attributed = try? AttributedString(markdown: markdown) {
-            Text(attributed)
-                .textSelection(.enabled)
-                .frame(maxWidth: .infinity, alignment: .leading)
-        } else {
-            Text(markdown)
-                .textSelection(.enabled)
-                .frame(maxWidth: .infinity, alignment: .leading)
-        }
     }
 
     private func summaryStatusTitle(for journal: DailyJournal) -> String {
@@ -169,5 +156,155 @@ struct TodayView: View {
     private func representativeEvent(for section: JournalSection) -> ActivityEvent? {
         let sourceEventIDs = Set(section.sourceEventIDs)
         return model.rawEvents.first { sourceEventIDs.contains($0.id) }
+    }
+}
+
+private struct SummaryMarkdownView: View {
+    private let blocks: [SummaryMarkdownBlock]
+
+    init(markdown: String) {
+        blocks = SummaryMarkdownParser.parse(markdown)
+    }
+
+    var body: some View {
+        VStack(alignment: .leading, spacing: 18) {
+            ForEach(blocks.indices, id: \.self) { index in
+                blockView(blocks[index])
+            }
+        }
+        .textSelection(.enabled)
+        .frame(maxWidth: .infinity, alignment: .leading)
+    }
+
+    @ViewBuilder
+    private func blockView(_ block: SummaryMarkdownBlock) -> some View {
+        switch block {
+        case .heading(let level, let text):
+            inlineMarkdownText(text)
+                .font(level == 1 ? .system(size: 24, weight: .semibold) : .title3.weight(.semibold))
+                .foregroundStyle(.primary)
+                .frame(maxWidth: .infinity, alignment: .leading)
+        case .paragraph(let text):
+            inlineMarkdownText(text)
+                .font(.body)
+                .foregroundStyle(.primary)
+                .lineSpacing(4)
+                .frame(maxWidth: .infinity, alignment: .leading)
+        case .list(let items):
+            VStack(alignment: .leading, spacing: 10) {
+                ForEach(items.indices, id: \.self) { index in
+                    HStack(alignment: .top, spacing: 10) {
+                        Circle()
+                            .fill(Color.secondary)
+                            .frame(width: 6, height: 6)
+                            .padding(.top, 7)
+
+                        inlineMarkdownText(items[index])
+                            .font(.body)
+                            .foregroundStyle(.primary)
+                            .lineSpacing(4)
+                            .frame(maxWidth: .infinity, alignment: .leading)
+                    }
+                }
+            }
+            .frame(maxWidth: .infinity, alignment: .leading)
+        }
+    }
+
+    private func inlineMarkdownText(_ markdown: String) -> Text {
+        let options = AttributedString.MarkdownParsingOptions(interpretedSyntax: .inlineOnlyPreservingWhitespace)
+        if let attributed = try? AttributedString(markdown: markdown, options: options) {
+            return Text(attributed)
+        }
+        return Text(markdown)
+    }
+}
+
+private enum SummaryMarkdownBlock {
+    case heading(level: Int, text: String)
+    case paragraph(String)
+    case list([String])
+}
+
+private enum SummaryMarkdownParser {
+    static func parse(_ markdown: String) -> [SummaryMarkdownBlock] {
+        let normalized = markdown
+            .replacingOccurrences(of: "\r\n", with: "\n")
+            .replacingOccurrences(of: "\r", with: "\n")
+        let lines = normalized.split(separator: "\n", omittingEmptySubsequences: false).map(String.init)
+
+        var blocks: [SummaryMarkdownBlock] = []
+        var index = 0
+
+        while index < lines.count {
+            let line = lines[index].trimmingCharacters(in: .whitespaces)
+            if line.isEmpty {
+                index += 1
+                continue
+            }
+
+            if let heading = heading(from: line) {
+                blocks.append(.heading(level: heading.level, text: heading.text))
+                index += 1
+                continue
+            }
+
+            if let item = listItem(from: line) {
+                var items = [item]
+                index += 1
+
+                while index < lines.count {
+                    let next = lines[index].trimmingCharacters(in: .whitespaces)
+                    guard let nextItem = listItem(from: next) else { break }
+                    items.append(nextItem)
+                    index += 1
+                }
+
+                blocks.append(.list(items))
+                continue
+            }
+
+            var paragraphLines = [line]
+            index += 1
+
+            while index < lines.count {
+                let next = lines[index].trimmingCharacters(in: .whitespaces)
+                if next.isEmpty || heading(from: next) != nil || listItem(from: next) != nil {
+                    break
+                }
+                paragraphLines.append(next)
+                index += 1
+            }
+
+            blocks.append(.paragraph(paragraphLines.joined(separator: " ")))
+        }
+
+        if blocks.count > 1,
+           let first = blocks.first,
+           case .heading(let level, _) = first,
+           level == 1 {
+            blocks.removeFirst()
+        }
+
+        return blocks.isEmpty ? [.paragraph(markdown)] : blocks
+    }
+
+    private static func heading(from line: String) -> (level: Int, text: String)? {
+        let level = line.prefix { $0 == "#" }.count
+        guard (1...3).contains(level) else { return nil }
+
+        let markerEnd = line.index(line.startIndex, offsetBy: level)
+        let content = line[markerEnd...].trimmingCharacters(in: .whitespaces)
+        guard content.isEmpty == false else { return nil }
+        return (level, content)
+    }
+
+    private static func listItem(from line: String) -> String? {
+        let markers = ["- ", "* "]
+        for marker in markers where line.hasPrefix(marker) {
+            let item = String(line.dropFirst(marker.count)).trimmingCharacters(in: .whitespaces)
+            return item.isEmpty ? nil : item
+        }
+        return nil
     }
 }

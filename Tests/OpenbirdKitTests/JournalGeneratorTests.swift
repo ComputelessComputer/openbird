@@ -48,7 +48,8 @@ struct JournalGeneratorTests {
         )
 
         #expect(journal.sections.count >= 1)
-        #expect(journal.markdown.contains("Summary"))
+        #expect(journal.markdown.contains("Captured 2 focus blocks across 2 apps"))
+        #expect(journal.markdown.contains("## 9:00"))
     }
 
     @Test func prefersSpecificHeadingsAndDeduplicatedBullets() async throws {
