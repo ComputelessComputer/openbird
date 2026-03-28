@@ -48,32 +48,35 @@ struct SettingsView: View {
                 TextField(model.editingProvider.kind.requiresAPIKey ? "API key" : "API key (optional)", text: $model.editingProvider.apiKey)
             }
             if model.availableChatModels.isEmpty == false {
-                Picker("Detected chat models", selection: detectedModelSelection(
+                Picker("Chat model", selection: modelSelection(
                     text: $model.editingProvider.chatModel,
                     models: model.availableChatModels
                 )) {
-                    Text("Select detected model").tag("")
+                    Text("Select model").tag("")
                     ForEach(model.availableChatModels) { providerModel in
                         Text(providerModel.displayName).tag(providerModel.id)
                     }
                 }
                 .frame(maxWidth: 360)
+            } else if model.editingProvider.chatModel.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty == false {
+                LabeledContent("Chat model", value: model.editingProvider.chatModel)
             }
-            TextField("Chat model", text: $model.editingProvider.chatModel)
             if model.editingProvider.kind.supportsEmbeddings {
                 if model.availableEmbeddingModels.isEmpty == false {
-                    Picker("Detected embedding models", selection: detectedModelSelection(
+                    Picker("Embedding model", selection: modelSelection(
                         text: $model.editingProvider.embeddingModel,
-                        models: model.availableEmbeddingModels
+                        models: model.availableEmbeddingModels,
+                        allowsEmptySelection: true
                     )) {
-                        Text("Select detected model").tag("")
+                        Text("None").tag("")
                         ForEach(model.availableEmbeddingModels) { providerModel in
                             Text(providerModel.displayName).tag(providerModel.id)
                         }
                     }
                     .frame(maxWidth: 360)
+                } else if model.editingProvider.embeddingModel.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty == false {
+                    LabeledContent("Embedding model", value: model.editingProvider.embeddingModel)
                 }
-                TextField("Embedding model (optional)", text: $model.editingProvider.embeddingModel)
             }
 
             HStack {
@@ -84,6 +87,7 @@ struct SettingsView: View {
                     model.saveEditingProvider()
                 }
                 .buttonStyle(.borderedProminent)
+                .disabled(model.canSaveEditingProvider == false)
             }
 
             if model.providerStatusMessage.isEmpty == false {
@@ -96,6 +100,9 @@ struct SettingsView: View {
             model.scheduleAutomaticProviderConnectionCheckIfNeeded()
         }
         .onChange(of: model.editingProvider.apiKey) { _, _ in
+            model.scheduleAutomaticProviderConnectionCheckIfNeeded()
+        }
+        .onChange(of: model.editingProvider.baseURL) { _, _ in
             model.scheduleAutomaticProviderConnectionCheckIfNeeded()
         }
     }
@@ -241,9 +248,10 @@ struct SettingsView: View {
         }
     }
 
-    private func detectedModelSelection(
+    private func modelSelection(
         text: Binding<String>,
-        models: [ProviderModelInfo]
+        models: [ProviderModelInfo],
+        allowsEmptySelection: Bool = false
     ) -> Binding<String> {
         Binding(
             get: {
@@ -252,6 +260,9 @@ struct SettingsView: View {
             },
             set: { selection in
                 guard selection.isEmpty == false else {
+                    if allowsEmptySelection {
+                        text.wrappedValue = ""
+                    }
                     return
                 }
                 text.wrappedValue = selection

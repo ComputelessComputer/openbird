@@ -213,6 +213,19 @@ final class AppModel: ObservableObject {
         availableProviderModels.filter { ProviderConnectionAdvisor.isEmbeddingModel($0.id) }
     }
 
+    var canSaveEditingProvider: Bool {
+        let chatModel = editingProvider.chatModel.trimmingCharacters(in: .whitespacesAndNewlines)
+        guard chatModel.isEmpty == false else {
+            return false
+        }
+
+        if availableChatModels.isEmpty == false {
+            return availableChatModels.contains { $0.id == chatModel }
+        }
+
+        return ProviderConnectionAdvisor.shouldReplaceChatModel(chatModel) == false
+    }
+
     private var isRunningFromAppBundle: Bool {
         Bundle.main.bundleURL.pathExtension == "app"
     }
@@ -435,11 +448,11 @@ final class AppModel: ObservableObject {
     }
 
     private func shouldAutomaticallyCheckProviderConnection(for config: ProviderConfig) -> Bool {
-        guard config.kind.showsAPIKeyField else {
-            return false
+        if config.kind.requiresAPIKey {
+            return config.apiKey.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty == false
         }
 
-        return config.apiKey.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty == false
+        return config.baseURL.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty == false
     }
 
     private func clearProviderConnectionResult() {
