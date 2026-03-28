@@ -7,6 +7,22 @@ struct TodayView: View {
     @State private var isPreparingTimeline = false
     @State private var isChatExpanded = false
     @FocusState private var focusedField: TodayChatDock.FocusField?
+    private static let selectedDayMonthFormatter: DateFormatter = {
+        let formatter = DateFormatter()
+        formatter.calendar = .current
+        formatter.locale = Locale(identifier: "en_US_POSIX")
+        formatter.timeZone = .current
+        formatter.dateFormat = "MMMM"
+        return formatter
+    }()
+    private static let selectedDayYearFormatter: DateFormatter = {
+        let formatter = DateFormatter()
+        formatter.calendar = .current
+        formatter.locale = Locale(identifier: "en_US_POSIX")
+        formatter.timeZone = .current
+        formatter.dateFormat = "yyyy"
+        return formatter
+    }()
 
     var body: some View {
         VStack(alignment: .leading, spacing: 20) {
@@ -74,13 +90,27 @@ struct TodayView: View {
 
     private var header: some View {
         HStack {
-            DatePicker("Day", selection: Binding(
-                get: { model.selectedDay },
-                set: { model.selectDay($0) }
-            ), displayedComponents: .date)
-            .datePickerStyle(.compact)
+            Text(selectedDayTitle)
+                .font(.title3.bold())
 
             Spacer()
+
+            ControlGroup {
+                Button {
+                    stepSelectedDay(by: -1)
+                } label: {
+                    Image(systemName: "chevron.left")
+                }
+                .help("Previous day")
+
+                Button {
+                    stepSelectedDay(by: 1)
+                } label: {
+                    Image(systemName: "chevron.right")
+                }
+                .help("Next day")
+                .disabled(isShowingToday)
+            }
 
             Button("Inspect Evidence") {
                 model.isShowingRawLogInspector = true
@@ -169,6 +199,50 @@ struct TodayView: View {
         focusedField = nil
         withAnimation(.spring(response: 0.24, dampingFraction: 0.9)) {
             isChatExpanded = false
+        }
+    }
+
+    private var selectedDayTitle: String {
+        let day = Calendar.current.component(.day, from: model.selectedDay)
+        let month = Self.selectedDayMonthFormatter.string(from: model.selectedDay)
+        let year = Self.selectedDayYearFormatter.string(from: model.selectedDay)
+        return "\(month) \(day)\(ordinalSuffix(for: day)), \(year)"
+    }
+
+    private var isShowingToday: Bool {
+        Calendar.current.isDate(model.selectedDay, inSameDayAs: Date())
+    }
+
+    private func stepSelectedDay(by offset: Int) {
+        let calendar = Calendar.current
+        let currentDay = calendar.startOfDay(for: model.selectedDay)
+        let today = calendar.startOfDay(for: Date())
+
+        guard let targetDay = calendar.date(byAdding: .day, value: offset, to: currentDay) else {
+            return
+        }
+        guard targetDay <= today else {
+            return
+        }
+
+        model.selectDay(targetDay)
+    }
+
+    private func ordinalSuffix(for day: Int) -> String {
+        let lastTwoDigits = day % 100
+        if (11...13).contains(lastTwoDigits) {
+            return "th"
+        }
+
+        switch day % 10 {
+        case 1:
+            return "st"
+        case 2:
+            return "nd"
+        case 3:
+            return "rd"
+        default:
+            return "th"
         }
     }
 
