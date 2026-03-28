@@ -107,7 +107,7 @@ private struct CaptureToolbarButton: View {
     }
 
     private var actionTitle: String {
-        model.settings.capturePaused ? "Resume Capture" : "Pause Capture"
+        model.settings.capturePaused ? "Resume" : "Pause"
     }
 
     private var buttonTitle: String {
@@ -124,7 +124,7 @@ private struct CaptureToolbarButton: View {
         if model.isCollectorHeartbeatFresh == false { return "stop.fill" }
         switch model.settings.collectorStatus {
         case "running":
-            return "waveform"
+            return "record.circle.fill"
         case "error":
             return "exclamationmark"
         default:
@@ -147,10 +147,6 @@ private struct CaptureToolbarButton: View {
 
     private var buttonBackgroundColor: Color {
         isHovering ? statusColor.opacity(0.1) : Color(nsColor: .controlBackgroundColor)
-    }
-
-    private var buttonBorderColor: Color {
-        isHovering ? statusColor.opacity(0.24) : Color(nsColor: .separatorColor).opacity(0.35)
     }
 
     var body: some View {
@@ -181,10 +177,6 @@ private struct CaptureToolbarButton: View {
             .padding(.horizontal, 12)
             .padding(.vertical, 8)
             .background(buttonBackgroundColor, in: RoundedRectangle(cornerRadius: 12, style: .continuous))
-            .overlay {
-                RoundedRectangle(cornerRadius: 12, style: .continuous)
-                    .strokeBorder(buttonBorderColor, lineWidth: 1)
-            }
         }
         .buttonStyle(.plain)
         .help("\(model.captureStatusLabel)\n\(model.captureStatusDetail)")
