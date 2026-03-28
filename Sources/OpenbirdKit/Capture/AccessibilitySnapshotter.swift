@@ -2,13 +2,13 @@ import ApplicationServices
 import AppKit
 import Foundation
 
-public struct AccessibilitySnapshotter {
-    private let browserURLResolver = BrowserURLResolver()
-    private let snapshotSanitizer = SnapshotSanitizer()
+struct FrontmostApplicationContext: Sendable {
+    let processIdentifier: pid_t
+    let bundleID: String
+    let appName: String
 
-    public init() {}
-
-    public func snapshotFrontmostWindow() -> WindowSnapshot? {
+    @MainActor
+    static func current() -> FrontmostApplicationContext? {
         guard let application = NSWorkspace.shared.frontmostApplication,
               application.isHidden == false,
               let bundleID = application.bundleIdentifier
@@ -16,11 +16,25 @@ public struct AccessibilitySnapshotter {
             return nil
         }
 
+        return FrontmostApplicationContext(
+            processIdentifier: application.processIdentifier,
+            bundleID: bundleID,
+            appName: application.localizedName ?? bundleID
+        )
+    }
+}
+
+public struct AccessibilitySnapshotter: Sendable {
+    private let snapshotSanitizer = SnapshotSanitizer()
+
+    public init() {}
+
+    func snapshotFrontmostWindow(for application: FrontmostApplicationContext) -> WindowSnapshot? {
         let axApplication = AXUIElementCreateApplication(application.processIdentifier)
         guard let focusedWindow = copyElementAttribute(axApplication, attribute: kAXFocusedWindowAttribute)
                 ?? copyElementAttribute(axApplication, attribute: kAXMainWindowAttribute)
         else {
-            let snapshot = snapshotSanitizer.sanitize(minimalSnapshot(for: application, bundleID: bundleID))
+            let snapshot = snapshotSanitizer.sanitize(minimalSnapshot(for: application))
             return snapshotSanitizer.shouldDiscard(snapshot) ? nil : snapshot
         }
 
@@ -29,10 +43,8 @@ public struct AccessibilitySnapshotter {
         }
 
         let windowTitle = stringAttribute(kAXTitleAttribute, on: focusedWindow)
-            ?? application.localizedName
-            ?? bundleID
-        let url = browserURLResolver.currentURL(for: bundleID, windowTitle: windowTitle)
-            ?? stringAttribute("AXURL", on: focusedWindow)
+            ?? application.appName
+        let url = stringAttribute("AXURL", on: focusedWindow)
         let windowText = collectVisibleText(from: focusedWindow, depth: 0, remainingNodes: 220, remainingCharacters: 4000)
         let focusedElementText = copyElementAttribute(axApplication, attribute: kAXFocusedUIElementAttribute)
             .map { collectVisibleText(from: $0, depth: 0, remainingNodes: 60, remainingCharacters: 1200) }
@@ -40,8 +52,8 @@ public struct AccessibilitySnapshotter {
         let visibleText = mergeTextFragments([windowText, focusedElementText])
 
         let snapshot = WindowSnapshot(
-            bundleId: bundleID,
-            appName: application.localizedName ?? bundleID,
+            bundleId: application.bundleID,
+            appName: application.appName,
             windowTitle: windowTitle,
             url: url,
             visibleText: visibleText.trimmingCharacters(in: CharacterSet.whitespacesAndNewlines),
@@ -51,12 +63,12 @@ public struct AccessibilitySnapshotter {
         return snapshotSanitizer.shouldDiscard(sanitized) ? nil : sanitized
     }
 
-    private func minimalSnapshot(for application: NSRunningApplication, bundleID: String) -> WindowSnapshot {
+    private func minimalSnapshot(for application: FrontmostApplicationContext) -> WindowSnapshot {
         WindowSnapshot(
-            bundleId: bundleID,
-            appName: application.localizedName ?? bundleID,
-            windowTitle: application.localizedName ?? bundleID,
-            url: browserURLResolver.currentURL(for: bundleID, windowTitle: application.localizedName ?? bundleID),
+            bundleId: application.bundleID,
+            appName: application.appName,
+            windowTitle: application.appName,
+            url: nil,
             visibleText: "",
             source: "workspace"
         )

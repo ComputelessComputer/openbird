@@ -6,6 +6,7 @@ public final class CollectorRuntime: NSObject, @unchecked Sendable {
 
     private let store: OpenbirdStore
     private let snapshotter = AccessibilitySnapshotter()
+    private let browserURLResolver = BrowserURLResolver()
     private let exclusionEngine = ExclusionEngine()
     private let captureInterval: TimeInterval
     private let ownerID: String
@@ -96,9 +97,20 @@ public final class CollectorRuntime: NSObject, @unchecked Sendable {
                 return
             }
 
-            guard let snapshot = await MainActor.run(body: { snapshotter.snapshotFrontmostWindow() }) else {
+            guard let frontmostApplication = await MainActor.run(body: { FrontmostApplicationContext.current() }) else {
                 _ = try await store.updateCollectorStatus(ownerID: ownerID, status: "idle", heartbeat: now)
                 return
+            }
+
+            guard var snapshot = snapshotter.snapshotFrontmostWindow(for: frontmostApplication) else {
+                _ = try await store.updateCollectorStatus(ownerID: ownerID, status: "idle", heartbeat: now)
+                return
+            }
+
+            if snapshot.url == nil {
+                snapshot.url = await MainActor.run {
+                    browserURLResolver.currentURL(for: snapshot.bundleId, windowTitle: snapshot.windowTitle)
+                }
             }
 
             let exclusions = try await store.loadExclusions()
