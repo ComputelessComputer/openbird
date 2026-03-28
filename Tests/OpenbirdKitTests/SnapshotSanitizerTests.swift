@@ -7,15 +7,32 @@ struct SnapshotSanitizerTests {
         let snapshot = WindowSnapshot(
             bundleId: "com.tinyspeck.slackmacgap",
             appName: "Slack",
-            windowTitle: "product (Channel) - Fastrepl - Slack",
+            windowTitle: "product (Channel) - Fastrepl - 1 new item - Slack",
             url: nil,
-            visibleText: "product (Channel) - Fastrepl - Slack",
+            visibleText: "product (Channel) - Fastrepl - 1 new item - Slack",
             source: "accessibility"
         )
 
         let sanitized = sanitizer.sanitize(snapshot)
 
         #expect(sanitized.windowTitle == "product (Channel)")
+        #expect(sanitized.visibleText.isEmpty)
+    }
+
+    @Test func usesNormalizedSlackVisibleTextWhenWindowTitleIsGeneric() {
+        let sanitizer = SnapshotSanitizer()
+        let snapshot = WindowSnapshot(
+            bundleId: "com.tinyspeck.slackmacgap",
+            appName: "Slack",
+            windowTitle: "Slack",
+            url: nil,
+            visibleText: "alert-users (Channel) - Fastrepl - 1 new item - Slack",
+            source: "accessibility"
+        )
+
+        let sanitized = sanitizer.sanitize(snapshot)
+
+        #expect(sanitized.windowTitle == "alert-users (Channel)")
         #expect(sanitized.visibleText.isEmpty)
     }
 

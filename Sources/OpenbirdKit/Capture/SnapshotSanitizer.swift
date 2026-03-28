@@ -57,6 +57,7 @@ struct SnapshotSanitizer {
         visibleText
             .components(separatedBy: .newlines)
             .map { $0.trimmingCharacters(in: .whitespacesAndNewlines) }
+            .map { normalizedWindowTitle($0, bundleId: bundleId) }
             .filter { $0.isEmpty == false }
             .filter { isDuplicateLine($0, title: title, appName: appName, bundleId: bundleId) == false }
             .filter { isLowSignalLine($0, bundleId: bundleId) == false }
@@ -67,11 +68,34 @@ struct SnapshotSanitizer {
         guard title.hasSuffix(" - Slack") else { return title }
 
         let withoutSuffix = String(title.dropLast(" - Slack".count))
-        let parts = withoutSuffix.components(separatedBy: " - ")
-        if parts.count >= 2, let first = parts.first, first.isEmpty == false {
-            return first
+        var parts = withoutSuffix.components(separatedBy: " - ")
+        guard parts.count >= 2 else { return title }
+
+        if let last = parts.last, isSlackStatusSegment(last) {
+            parts.removeLast()
+        }
+
+        guard parts.count >= 2 else { return parts.first ?? withoutSuffix }
+
+        parts.removeLast()
+        let normalized = parts.joined(separator: " - ").trimmingCharacters(in: .whitespacesAndNewlines)
+        if normalized.isEmpty == false {
+            return normalized
         }
         return withoutSuffix
+    }
+
+    private func isSlackStatusSegment(_ segment: String) -> Bool {
+        let normalized = segment.normalizedComparisonKey
+        let words = normalized.split(separator: " ")
+        guard let first = words.first, Int(first) != nil else { return false }
+
+        return normalized.contains("new item")
+            || normalized.contains("new message")
+            || normalized.contains("unread")
+            || normalized.contains("mention")
+            || normalized.contains("reply")
+            || normalized.contains("thread")
     }
 
     private func isGenericTitle(_ title: String, appName: String) -> Bool {
