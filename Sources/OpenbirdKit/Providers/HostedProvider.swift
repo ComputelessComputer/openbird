@@ -11,17 +11,40 @@ public struct HostedProvider: LLMProvider {
 
     public func listModels() async throws -> [ProviderModelInfo] {
         switch config.kind {
-        case .openAICompatible, .openAI, .openRouter:
+        case .openAICompatible, .openAI:
             let response: OpenAIModelsResponse = try await performRequest(path: "/models")
             return response.data.map { ProviderModelInfo(id: $0.id) }
+        case .openRouter:
+            let response: OpenRouterModelsResponse = try await performRequest(path: "/models?output_modalities=text")
+            return response.data.map {
+                ProviderModelInfo(
+                    id: $0.id,
+                    displayName: $0.name ?? $0.id,
+                    canonicalID: $0.canonicalSlug,
+                    createdAt: $0.createdAt,
+                    outputModalities: $0.architecture?.outputModalities ?? [],
+                    isDeprecated: $0.isDeprecated
+                )
+            }
         case .anthropic:
             let response: AnthropicModelsResponse = try await performRequest(path: "/models")
-            return response.data.map { ProviderModelInfo(id: $0.id, displayName: $0.displayName ?? $0.id) }
+            return response.data.map {
+                ProviderModelInfo(
+                    id: $0.id,
+                    displayName: $0.displayName ?? $0.id,
+                    createdAt: Self.date(from: $0.createdAt)
+                )
+            }
         case .google:
             let response: GoogleModelsResponse = try await performRequest(path: "/models")
             return response.models.map {
                 let id = Self.googleModelID(from: $0.name)
-                return ProviderModelInfo(id: id, displayName: $0.displayName ?? id)
+                return ProviderModelInfo(
+                    id: id,
+                    displayName: $0.displayName ?? id,
+                    canonicalID: $0.baseModelID,
+                    supportedGenerationMethods: $0.supportedGenerationMethods ?? []
+                )
             }
         case .ollama:
             throw HostedProviderError.unsupportedProvider
@@ -149,8 +172,19 @@ public struct HostedProvider: LLMProvider {
             throw HostedProviderError.missingAPIKey(config.kind.displayName)
         }
 
-        let url = baseURL.appendingPathComponent(path.trimmingCharacters(in: CharacterSet(charactersIn: "/")))
-        var request = URLRequest(url: url)
+        let trimmedPath = path.trimmingCharacters(in: .whitespacesAndNewlines)
+        let pathComponents = trimmedPath.split(separator: "?", maxSplits: 1, omittingEmptySubsequences: false)
+        let relativePath = pathComponents.first.map(String.init) ?? trimmedPath
+        let url = baseURL.appendingPathComponent(relativePath.trimmingCharacters(in: CharacterSet(charactersIn: "/")))
+        let finalURL: URL
+        if pathComponents.count == 2,
+           var components = URLComponents(url: url, resolvingAgainstBaseURL: false) {
+            components.percentEncodedQuery = String(pathComponents[1])
+            finalURL = components.url ?? url
+        } else {
+            finalURL = url
+        }
+        var request = URLRequest(url: finalURL)
         request.httpMethod = method
 
         for (key, value) in requestHeaders() {
@@ -223,6 +257,26 @@ public struct HostedProvider: LLMProvider {
         }
         return "models/\(trimmed)"
     }
+
+    private static func date(from value: String?) -> Date? {
+        guard let rawValue = value else {
+            return nil
+        }
+
+        let trimmedValue = rawValue.trimmingCharacters(in: .whitespacesAndNewlines)
+        guard trimmedValue.isEmpty == false else {
+            return nil
+        }
+
+        let formatter = ISO8601DateFormatter()
+        formatter.formatOptions = [.withInternetDateTime, .withFractionalSeconds]
+        if let date = formatter.date(from: trimmedValue) {
+            return date
+        }
+
+        formatter.formatOptions = [.withInternetDateTime]
+        return formatter.date(from: trimmedValue)
+    }
 }
 
 private enum HostedProviderError: LocalizedError {
@@ -289,10 +343,12 @@ private struct AnthropicModelsResponse: Decodable {
     struct Model: Decodable {
         var id: String
         var displayName: String?
+        var createdAt: String?
 
         private enum CodingKeys: String, CodingKey {
             case id
             case displayName = "display_name"
+            case createdAt = "created_at"
         }
     }
 
@@ -333,9 +389,68 @@ private struct GoogleModelsResponse: Decodable {
     struct Model: Decodable {
         var name: String
         var displayName: String?
+        var baseModelID: String?
+        var supportedGenerationMethods: [String]?
+
+        private enum CodingKeys: String, CodingKey {
+            case name
+            case displayName = "displayName"
+            case baseModelID = "baseModelId"
+            case supportedGenerationMethods
+        }
     }
 
     var models: [Model]
+}
+
+private struct OpenRouterModelsResponse: Decodable {
+    struct Model: Decodable {
+        struct Architecture: Decodable {
+            var outputModalities: [String]?
+
+            private enum CodingKeys: String, CodingKey {
+                case outputModalities = "output_modalities"
+            }
+        }
+
+        var id: String
+        var name: String?
+        var canonicalSlug: String?
+        var createdAt: Date?
+        var architecture: Architecture?
+        var isDeprecated: Bool
+
+        private enum CodingKeys: String, CodingKey {
+            case id
+            case name
+            case canonicalSlug = "canonical_slug"
+            case createdAt = "created"
+            case architecture
+            case topProvider = "top_provider"
+            case perRequestLimits = "per_request_limits"
+            case pricing
+            case contextLength = "context_length"
+            case huggingFaceID = "hugging_face_id"
+        }
+
+        init(from decoder: Decoder) throws {
+            let container = try decoder.container(keyedBy: CodingKeys.self)
+            id = try container.decode(String.self, forKey: .id)
+            name = try container.decodeIfPresent(String.self, forKey: .name)
+            canonicalSlug = try container.decodeIfPresent(String.self, forKey: .canonicalSlug)
+            architecture = try container.decodeIfPresent(Architecture.self, forKey: .architecture)
+
+            if let seconds = try container.decodeIfPresent(TimeInterval.self, forKey: .createdAt) {
+                createdAt = Date(timeIntervalSince1970: seconds)
+            } else {
+                createdAt = nil
+            }
+
+            isDeprecated = false
+        }
+    }
+
+    var data: [Model]
 }
 
 private struct GoogleGenerateContentRequest: Encodable {

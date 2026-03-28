@@ -110,10 +110,11 @@ struct ProviderTests {
 
         OpenAICompatibleMockURLProtocol.handler = { request in
             #expect(request.url?.path == "/api/v1/models")
+            #expect(request.url?.query == "output_modalities=text")
             #expect(request.value(forHTTPHeaderField: "Authorization") == "Bearer router-key")
             #expect(request.value(forHTTPHeaderField: "HTTP-Referer") == "https://openbird.app")
             #expect(request.value(forHTTPHeaderField: "X-Title") == "Openbird")
-            let payload = #"{"data":[{"id":"openai/gpt-4.1-mini"}]}"#
+            let payload = #"{"data":[{"id":"openai/gpt-4.1-mini","name":"GPT-4.1 mini","canonical_slug":"openai/gpt-4.1-mini","created":1710000000,"architecture":{"output_modalities":["text"]}}]}"#
             let response = HTTPURLResponse(url: request.url!, statusCode: 200, httpVersion: nil, headerFields: nil)!
             return (response, Data(payload.utf8))
         }
@@ -128,6 +129,37 @@ struct ProviderTests {
         let models = try await provider.listModels()
 
         #expect(models.map { $0.id } == ["openai/gpt-4.1-mini"])
+        #expect(models.first?.outputModalities == ["text"])
+        #expect(models.first?.canonicalID == "openai/gpt-4.1-mini")
+    }
+
+    @Test func googleProviderParsesSupportedGenerationMethods() async throws {
+        let config = ProviderConfig(
+            name: "Google Gemini",
+            kind: .google,
+            baseURL: "https://generativelanguage.googleapis.com/v1beta",
+            apiKey: "gemini-key"
+        )
+
+        OpenAICompatibleMockURLProtocol.handler = { request in
+            #expect(request.url?.path == "/v1beta/models")
+            let payload = #"{"models":[{"name":"models/gemini-2.5-flash","displayName":"Gemini 2.5 Flash","baseModelId":"gemini-2.5-flash","supportedGenerationMethods":["generateContent"]},{"name":"models/gemini-embedding-001","displayName":"Gemini Embedding","baseModelId":"gemini-embedding-001","supportedGenerationMethods":["embedContent"]}]}"#
+            let response = HTTPURLResponse(url: request.url!, statusCode: 200, httpVersion: nil, headerFields: nil)!
+            return (response, Data(payload.utf8))
+        }
+
+        let session = URLSession(configuration: {
+            let configuration = URLSessionConfiguration.ephemeral
+            configuration.protocolClasses = [OpenAICompatibleMockURLProtocol.self]
+            return configuration
+        }())
+
+        let provider = HostedProvider(config: config, session: session)
+        let models = try await provider.listModels()
+
+        #expect(models.map(\.id) == ["gemini-2.5-flash", "gemini-embedding-001"])
+        #expect(models.first?.canonicalID == "gemini-2.5-flash")
+        #expect(models.first?.supportedGenerationMethods == ["generateContent"])
     }
 }
 

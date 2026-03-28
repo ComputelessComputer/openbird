@@ -13,10 +13,28 @@ public struct ChatTurn: Codable, Hashable, Sendable {
 public struct ProviderModelInfo: Identifiable, Codable, Hashable, Sendable {
     public var id: String
     public var displayName: String
+    public var canonicalID: String?
+    public var createdAt: Date?
+    public var outputModalities: [String]
+    public var supportedGenerationMethods: [String]
+    public var isDeprecated: Bool
 
-    public init(id: String, displayName: String? = nil) {
+    public init(
+        id: String,
+        displayName: String? = nil,
+        canonicalID: String? = nil,
+        createdAt: Date? = nil,
+        outputModalities: [String] = [],
+        supportedGenerationMethods: [String] = [],
+        isDeprecated: Bool = false
+    ) {
         self.id = id
         self.displayName = displayName ?? id
+        self.canonicalID = canonicalID
+        self.createdAt = createdAt
+        self.outputModalities = outputModalities
+        self.supportedGenerationMethods = supportedGenerationMethods
+        self.isDeprecated = isDeprecated
     }
 }
 
