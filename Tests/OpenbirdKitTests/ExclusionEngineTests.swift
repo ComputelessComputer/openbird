@@ -19,4 +19,26 @@ struct ExclusionEngineTests {
 
         #expect(engine.isExcluded(snapshot: snapshot, rules: rules))
     }
+
+    @Test func matchesSubdomainsButNotLookalikeHosts() {
+        let engine = ExclusionEngine()
+        let matchingSnapshot = WindowSnapshot(
+            bundleId: "com.apple.Safari",
+            appName: "Safari",
+            windowTitle: "Docs",
+            url: "https://docs.google.com/document/d/123",
+            visibleText: "Draft"
+        )
+        let nonMatchingSnapshot = WindowSnapshot(
+            bundleId: "com.apple.Safari",
+            appName: "Safari",
+            windowTitle: "Search",
+            url: "https://notgoogle.com?q=google.com",
+            visibleText: "Results"
+        )
+        let rules = [ExclusionRule(kind: .domain, pattern: "google.com")]
+
+        #expect(engine.isExcluded(snapshot: matchingSnapshot, rules: rules))
+        #expect(engine.isExcluded(snapshot: nonMatchingSnapshot, rules: rules) == false)
+    }
 }
