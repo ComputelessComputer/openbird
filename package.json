@@ -1,13 +1,13 @@
 {
   "name": "openbird",
   "private": true,
-  "packageManager": "npm@11.11.0",
+  "packageManager": "bun@1.3.9",
   "workspaces": [
     "apps/*"
   ],
   "scripts": {
-    "landing:dev": "npm run dev --workspace @openbird/landing",
-    "landing:build": "npm run build --workspace @openbird/landing",
-    "landing:preview": "npm run preview --workspace @openbird/landing"
+    "landing:dev": "bun run --filter @openbird/landing dev",
+    "landing:build": "bun run --filter @openbird/landing build",
+    "landing:preview": "bun run --filter @openbird/landing preview"
   }
 }
