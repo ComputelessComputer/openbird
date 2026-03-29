@@ -32,7 +32,10 @@ public actor RetrievalService {
         let queryVector = try await provider.embed(texts: [query]).first ?? []
         guard queryVector.isEmpty == false else { return Array(ftsResults.prefix(topK)) }
 
-        var storedVectors = Dictionary(uniqueKeysWithValues: try await store.loadEmbeddingChunks(providerID: providerConfig.id).map {
+        var storedVectors = Dictionary(uniqueKeysWithValues: try await store.loadEmbeddingChunks(
+            providerID: providerConfig.id,
+            model: providerConfig.embeddingModel
+        ).map {
             ($0.eventID, $0.vector)
         })
 

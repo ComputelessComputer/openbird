@@ -100,7 +100,7 @@ public actor OpenbirdStore {
         try database.saveEmbeddingChunk(id: id, eventID: eventID, providerID: providerID, model: model, vector: vector, snippet: snippet)
     }
 
-    public func loadEmbeddingChunks(providerID: String) throws -> [(eventID: String, vector: [Double], snippet: String)] {
-        try database.loadEmbeddingChunks(providerID: providerID)
+    public func loadEmbeddingChunks(providerID: String, model: String) throws -> [(eventID: String, vector: [Double], snippet: String)] {
+        try database.loadEmbeddingChunks(providerID: providerID, model: model)
     }
 }

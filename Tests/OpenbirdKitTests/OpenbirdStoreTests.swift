@@ -184,4 +184,35 @@ struct OpenbirdStoreTests {
         #expect(savedProvider?.kind == .anthropic)
         #expect(savedProvider?.apiKey == "test-key")
     }
+
+    @Test func loadsEmbeddingChunksForTheRequestedModelOnly() async throws {
+        let databaseURL = FileManager.default.temporaryDirectory.appendingPathComponent(UUID().uuidString).appendingPathExtension("sqlite")
+        let store = try OpenbirdStore(databaseURL: databaseURL)
+
+        try await store.saveEmbeddingChunk(
+            id: "provider-event-1",
+            eventID: "event-1",
+            providerID: "provider",
+            model: "text-embedding-3-small",
+            vector: [0.1, 0.2],
+            snippet: "first"
+        )
+        try await store.saveEmbeddingChunk(
+            id: "provider-event-2",
+            eventID: "event-2",
+            providerID: "provider",
+            model: "text-embedding-3-large",
+            vector: [0.3, 0.4],
+            snippet: "second"
+        )
+
+        let smallModelChunks = try await store.loadEmbeddingChunks(
+            providerID: "provider",
+            model: "text-embedding-3-small"
+        )
+
+        #expect(smallModelChunks.count == 1)
+        #expect(smallModelChunks.first?.eventID == "event-1")
+        #expect(smallModelChunks.first?.snippet == "first")
+    }
 }

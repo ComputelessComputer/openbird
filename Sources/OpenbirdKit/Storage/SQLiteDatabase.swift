@@ -151,10 +151,13 @@ public final class SQLiteDatabase: @unchecked Sendable {
             ("collectorOwnerID", settings.collectorOwnerID ?? ""),
             ("collectorOwnerName", settings.collectorOwnerName ?? ""),
         ]
-        try execute("DELETE FROM app_settings;")
         for (key, value) in values {
             try execute(
-                "INSERT INTO app_settings (key, value) VALUES (?, ?);",
+                """
+                INSERT INTO app_settings (key, value)
+                VALUES (?, ?)
+                ON CONFLICT(key) DO UPDATE SET value = excluded.value;
+                """,
                 bindings: [.text(key), .text(value)]
             )
         }
@@ -520,10 +523,10 @@ public final class SQLiteDatabase: @unchecked Sendable {
         )
     }
 
-    public func loadEmbeddingChunks(providerID: String) throws -> [(eventID: String, vector: [Double], snippet: String)] {
+    public func loadEmbeddingChunks(providerID: String, model: String) throws -> [(eventID: String, vector: [Double], snippet: String)] {
         try query(
-            "SELECT event_id, vector_json, snippet FROM embedding_chunks WHERE provider_id = ?;",
-            bindings: [.text(providerID)]
+            "SELECT event_id, vector_json, snippet FROM embedding_chunks WHERE provider_id = ? AND model = ?;",
+            bindings: [.text(providerID), .text(model)]
         ).compactMap { row in
             guard let vector = try? decode([Double].self, from: row.stringValue(for: "vector_json")) else { return nil }
             return (row.stringValue(for: "event_id"), vector, row.stringValue(for: "snippet"))
