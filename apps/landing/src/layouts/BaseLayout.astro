@@ -32,6 +32,8 @@ const {
     --muted: #505050;
     --line: #d4d4d4;
     --link: #165dff;
+    --title-size: 1.85rem;
+    --title-line-height: 1.25;
   }
 
   * {
@@ -87,7 +89,7 @@ const {
   }
 
   h1 {
-    font-size: 1.85rem;
+    font-size: var(--title-size);
   }
 
   h2 {
@@ -132,23 +134,28 @@ const {
   }
 
   .header {
-    display: flex;
-    align-items: flex-start;
-    gap: 14px;
+    display: grid;
+    gap: 6px;
     margin-bottom: 8px;
   }
 
+  .header-title-row {
+    display: flex;
+    align-items: center;
+    gap: 12px;
+  }
+
   .header-icon {
-    width: 88px;
-    height: auto;
+    width: auto;
+    height: calc(var(--title-size) * var(--title-line-height));
     flex: 0 0 auto;
   }
 
-  .header-copy h1 {
-    margin-bottom: 4px;
+  .header h1 {
+    margin-bottom: 0;
   }
 
-  .header-copy p {
+  .header p {
     margin-bottom: 0;
     color: var(--muted);
     font-size: 0.92rem;
@@ -173,8 +180,5 @@ const {
       margin-right: auto;
     }
 
-    .header-icon {
-      width: 104px;
-    }
   }
 </style>
