@@ -6,16 +6,38 @@ const sourceUrl = "https://github.com/ComputelessComputer/openbird";
 const latestReleaseApiUrl = "https://api.github.com/repos/ComputelessComputer/openbird/releases/latest";
 
 const detailItems = [
-  "Local-first by default. No account required. No backend required.",
+  "Local-first by default. No account or backend required.",
   "Captures the frontmost app, window title, browser URL when available, visible accessibility text, and timestamps.",
   "Does not capture raw key events, clipboard contents, passwords, secure text fields, hidden windows, or automatic screenshots.",
-  "Stores captured data locally at `~/Library/Application Support/Openbird/openbird.sqlite`.",
-  "Supports Ollama, LM Studio, and other OpenAI-compatible endpoints.",
+  "Stores captured data locally at `~/Library/Application Support/Openbird/openbird.sqlite` and supports Ollama, LM Studio, and other OpenAI-compatible endpoints.",
   "Built for macOS 14+ on Apple Silicon.",
+];
+
+const faqItems = [
+  {
+    question: "What can I do with it?",
+    answer:
+      "Generate a daily review, ask follow-up questions about your day, and inspect the raw activity log behind both.",
+  },
+  {
+    question: "Can I control or delete the data?",
+    answer:
+      "Yes. You can pause capture, exclude apps and domains, inspect the raw log, and delete the last hour, the last day, or everything.",
+  },
+  {
+    question: "Can I use my own model?",
+    answer:
+      "Yes. Local endpoints work out of the box, and remote OpenAI-compatible providers work too.",
+  },
+  {
+    question: "How do I install it?",
+    answer:
+      "Download the latest DMG, drag <code>Openbird.app</code> into Applications, grant Accessibility permission, then pick a provider and generate your first review.",
+  },
 ];
 ---
 
-<BaseLayout description="Openbird is a local-first macOS activity journal that captures your current work context, stores it locally, and turns it into a daily review and follow-up chat.">
+<BaseLayout description="Openbird is a local-first macOS activity journal that builds a private timeline of your day and turns it into daily reviews and chat.">
   <main class="page">
     <div class="header">
       <img src="/openbird.png" alt="Openbird bird illustration" class="header-icon" />
@@ -24,26 +46,13 @@ const detailItems = [
     </div>
 
     <p>
-      Openbird watches your current work context through the Accessibility API, stores that context on
-      your Mac, and turns it into a daily review and follow-up chat.
+      Openbird builds a private timeline of your day from the frontmost app, window title, browser URL
+      when available, and visible text in the active window.
     </p>
 
     <p>
-      It exists because software with this much visibility into your day should not be a black box. If
-      an app can see what you are doing across your computer, you should be able to inspect it, control
-      it, pause it, and delete its data.
-    </p>
-
-    <p>
-      Openbird captures the frontmost app and window, builds a local timeline of your day, and uses
-      that log to answer questions like what you did today, what you were working on around 3pm, which
-      project took most of your attention, and which apps, tabs, or docs were involved in a given block
-      of time.
-    </p>
-
-    <p>
-      The privacy boundary is explicit. The model is your choice. The code is open source because trust
-      is better when it is verifiable.
+      Everything stays on your Mac by default. You can inspect the log, pause capture, exclude apps
+      and domains, choose your own model, and delete data whenever you want.
     </p>
 
     <p>
@@ -54,7 +63,7 @@ const detailItems = [
 
     <hr />
 
-    <h2>Details</h2>
+    <h2>At a glance</h2>
 
     <ul>
       {detailItems.map((item) => (
@@ -62,64 +71,16 @@ const detailItems = [
       ))}
     </ul>
 
-    <p>
-      You can run fully offline if your model is local. Default local endpoints are
-      <code>http://127.0.0.1:11434/v1</code> for Ollama and <code>http://127.0.0.1:1234/v1</code> for
-      LM Studio.
-    </p>
-
-    <p>
-      The current app has four main surfaces: onboarding for permissions and privacy, Today for daily
-      review generation, Chat for follow-up questions over your local activity history, and Settings for
-      provider setup, exclusions, retention, pause, and delete controls.
-    </p>
-
     <hr />
 
     <h2>FAQ</h2>
 
-    <h3>Why Openbird?</h3>
-    <p>
-      Because software that observes your work should be inspectable. The point is not “trust us.” The
-      point is that you do not have to.
-    </p>
-
-    <h3>What does Openbird capture?</h3>
-    <p>
-      Openbird captures the frontmost app, bundle ID, window title, browser tab URL when available,
-      visible text from the active window accessibility tree, and start and end timestamps.
-    </p>
-
-    <h3>What does Openbird not capture?</h3>
-    <p>
-      It does not capture raw key events, clipboard contents, passwords, secure text fields, hidden or
-      minimized windows, or automatic screenshots.
-    </p>
-
-    <h3>Can I inspect or delete the data?</h3>
-    <p>
-      Yes. You can pause capture at any time, exclude apps and domains, inspect the raw log used for
-      generation, and delete the last hour, the last day, or everything.
-    </p>
-
-    <h3>Can I use my own model?</h3>
-    <p>
-      Yes. Openbird supports Ollama, LM Studio, and other OpenAI-compatible endpoints. You can run fully
-      offline if your model is local.
-    </p>
-
-    <h3>How do I install it?</h3>
-    <p>
-      Download the latest DMG, drag <code>Openbird.app</code> into Applications, launch it, grant
-      Accessibility permission when prompted, choose a provider in Settings, then generate your first
-      review from the Today screen.
-    </p>
-
-    <p class="small muted">
-      Openbird is a local-first macOS activity journal.
-      <a href={releaseUrl} class="latest-release-link">Latest release</a>.
-      <a href={sourceUrl}>Source code</a>.
-    </p>
+    {faqItems.map((item) => (
+      <>
+        <h3>{item.question}</h3>
+        <p set:html={item.answer}></p>
+      </>
+    ))}
   </main>
 
   <script define:vars={{ latestReleaseApiUrl, releaseUrl }}>
