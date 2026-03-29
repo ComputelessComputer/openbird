@@ -90,28 +90,30 @@ struct TodayView: View {
 
     private var header: some View {
         HStack {
-            Text(selectedDayTitle)
-                .font(.title3.bold())
+            HStack(spacing: 12) {
+                Text(selectedDayTitle)
+                    .font(.title3.bold())
+
+                ControlGroup {
+                    Button {
+                        stepSelectedDay(by: -1)
+                    } label: {
+                        Image(systemName: "chevron.left")
+                    }
+                    .help("Previous day")
+
+                    Button {
+                        stepSelectedDay(by: 1)
+                    } label: {
+                        Image(systemName: "chevron.right")
+                    }
+                    .help("Next day")
+                    .disabled(isShowingToday)
+                }
+                .fixedSize()
+            }
 
             Spacer()
-
-            ControlGroup {
-                Button {
-                    stepSelectedDay(by: -1)
-                } label: {
-                    Image(systemName: "chevron.left")
-                }
-                .help("Previous day")
-
-                Button {
-                    stepSelectedDay(by: 1)
-                } label: {
-                    Image(systemName: "chevron.right")
-                }
-                .help("Next day")
-                .disabled(isShowingToday)
-            }
-            .fixedSize()
 
             Button {
                 model.generateTodayJournal()
