@@ -680,6 +680,9 @@ final class AppModel: ObservableObject {
         guard updateCheckTask == nil else {
             return
         }
+        guard availableUpdate == nil else {
+            return
+        }
 
         if let lastCheckDate = userDefaults.object(forKey: Self.lastUpdateCheckDateKey) as? Date,
            Date().timeIntervalSince(lastCheckDate) < Self.automaticUpdateCheckInterval {
