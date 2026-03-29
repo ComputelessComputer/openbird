@@ -39,34 +39,14 @@ public actor JournalGenerator {
         if let providerConfig {
             do {
                 let provider = ProviderFactory.makeProvider(for: providerConfig)
-                let prompt = """
-                You are writing a useful daily activity review from local computer activity logs.
-                Write for the person who lived the day.
-
-                Requirements:
-                - Return markdown only.
-                - Do not include a document title or repeat the date as a top heading.
-                - Start with a short framing sentence only if it adds value.
-                - Then write 4-8 chronological sections using markdown `##` headings.
-                - Each section heading should combine the approximate time or time range with the activity, for example `## ~3:15 PM - 4:15 PM - Char Dev Sprint`.
-                - Under each heading, write 1 short paragraph that explains what happened, with concrete nouns and outcomes.
-                - Add bullet lists only when they improve clarity, such as decisions, people, deliverables, or candidate lists.
-                - Use a markdown table when the evidence clearly contains a compact status list, comparison, or set of PRs.
-                - Merge or omit low-signal noise instead of narrating every app switch.
-                - Synthesize the evidence instead of echoing it verbatim.
-                - Prefer meaningful work descriptions over app chrome, repeated browser controls, toolbar labels, or duplicated URLs.
-                - Mention apps, repos, people, channels, or pages only when they help identify the work.
-                - If the evidence is noisy or ambiguous, say so briefly instead of inventing detail.
-
-                Day: \(OpenbirdDateFormatting.weekdayFormatter.string(from: request.date))
-
-                Evidence:
-                \(preparedSections.map(sectionPrompt).joined(separator: "\n\n"))
-                """
+                let prompt = journalPrompt(for: request.date, sections: preparedSections)
                 let response = try await provider.chat(
                     request: ProviderChatRequest(
                         messages: [
-                            ChatTurn(role: .system, content: "Write polished markdown only."),
+                            ChatTurn(
+                                role: .system,
+                                content: "Write polished markdown only. Focus on the user's journey, inferred intent, and outcomes rather than raw app names."
+                            ),
                             ChatTurn(role: .user, content: prompt),
                         ]
                     )
@@ -145,12 +125,58 @@ public actor JournalGenerator {
         let evidence = section.groupedEvents
             .map(eventPrompt)
             .joined(separator: "\n")
+        let appList = Array(section.groupedEvents.map(\.appName).deduplicatedByNormalizedText())
 
         return """
-        Focus window: \(section.timeRange)
-        Likely topic: \(section.heading)
+        Time window: \(section.timeRange)
+        Raw label candidate (do not copy blindly): \(section.heading)
+        Apps involved: \(naturalLanguageList(appList))
+        Better framing target:
+        - Describe what the user was trying to do, decide, compare, write, debug, or follow up on.
+        - Do not use a bare tool, site, repo, or channel name as the heading when a task-level description is possible.
         Evidence:
         \(evidence.isEmpty ? "- No detailed evidence available." : evidence)
+        """
+    }
+
+    private func journalPrompt(for date: Date, sections: [PreparedSection]) -> String {
+        """
+        You are writing a useful daily activity review from local computer activity logs.
+        Write for the person who lived the day.
+
+        Your job is to reconstruct the user's journey, not to restate obvious app switches.
+
+        Requirements:
+        - Return markdown only.
+        - Do not include a document title or repeat the date as a top heading.
+        - Start with a short framing sentence only if it adds value.
+        - Then write 4-8 chronological sections using markdown `##` headings.
+        - Each section heading should combine the approximate time or time range with a human activity label, for example `## ~3:15 PM - 4:15 PM - Comparing AI meeting-note tools`.
+        - Headings must describe the user's likely task, intent, or outcome. Avoid headings that are just tool names, URLs, repo names, or channel names unless there is truly no better inference.
+        - Under each heading, write 1 short paragraph that explains what happened, why it mattered, or what the user was trying to figure out.
+        - Favor verbs like comparing, researching, drafting, reviewing, coordinating, debugging, planning, or replying when the evidence supports them.
+        - Mention apps, repos, people, channels, or pages only when they help identify the work. They are supporting detail, not the main point.
+        - Merge or omit low-signal noise instead of narrating every app switch.
+        - Synthesize the evidence instead of echoing it verbatim.
+        - Prefer meaningful work descriptions over app chrome, repeated browser controls, toolbar labels, or duplicated URLs.
+        - Add bullet lists only when they improve clarity, such as decisions, people, deliverables, or candidate lists.
+        - Use a markdown table when the evidence clearly contains a compact status list, comparison, or set of PRs.
+        - If the evidence is noisy or ambiguous, hedge briefly instead of inventing detail.
+
+        Bad headings:
+        - `## 8:37 AM - Slack`
+        - `## 12:00 AM - Safari`
+        - `## 2:10 PM - stilla.ai`
+
+        Better headings:
+        - `## 8:37 AM - Checking the judging channel for next steps`
+        - `## 12:00 AM - Comparing AI meeting-note tools`
+        - `## 2:10 PM - Reviewing pricing and positioning for Stilla`
+
+        Day: \(OpenbirdDateFormatting.weekdayFormatter.string(from: date))
+
+        Evidence:
+        \(sections.map(sectionPrompt).joined(separator: "\n\n"))
         """
     }
 
@@ -215,7 +241,7 @@ public actor JournalGenerator {
     }
 
     private func sectionHeading(for section: PreparedSection) -> String {
-        "\(section.timeRange) - \(displayTopic(for: section))"
+        "\(section.timeRange) - \(storyHeadingLabel(for: section))"
     }
 
     private func sectionNarrative(for section: PreparedSection) -> String {
@@ -225,7 +251,9 @@ public actor JournalGenerator {
         let appKeys = Set(apps.map(\.normalizedComparisonKey))
 
         var sentences: [String] = []
-        if appKeys.contains(topicKey) {
+        if let narrativeLead = storyNarrativeLead(for: section, apps: apps) {
+            sentences.append(narrativeLead)
+        } else if appKeys.contains(topicKey) {
             sentences.append("Spent this block in \(naturalLanguageList(apps)).")
         } else if apps.isEmpty {
             sentences.append("Spent this block on \(topic).")
@@ -248,6 +276,102 @@ public actor JournalGenerator {
         }
 
         return topic
+    }
+
+    private func storyHeadingLabel(for section: PreparedSection) -> String {
+        let topic = displayTopic(for: section)
+        guard shouldRewriteHeading(topic, section: section),
+              let context = bestStoryContext(for: section) else {
+            return topic
+        }
+
+        switch dominantCategory(for: section) {
+        case .browser:
+            return "Reviewing \(context)"
+        case .communication:
+            return "Following up in \(context)"
+        case .development:
+            return "Working on \(context)"
+        case .generic:
+            return "Working through \(context)"
+        }
+    }
+
+    private func storyNarrativeLead(for section: PreparedSection, apps: [String]) -> String? {
+        guard shouldRewriteHeading(displayTopic(for: section), section: section),
+              let context = bestStoryContext(for: section) else {
+            return nil
+        }
+
+        switch dominantCategory(for: section) {
+        case .browser:
+            return "You were reviewing \(context) in \(naturalLanguageList(apps))."
+        case .communication:
+            return "You were following up in \(context) through \(naturalLanguageList(apps))."
+        case .development:
+            return "You were working on \(context) in \(naturalLanguageList(apps))."
+        case .generic:
+            return "You were working through \(context) in \(naturalLanguageList(apps))."
+        }
+    }
+
+    private func shouldRewriteHeading(_ topic: String, section: PreparedSection) -> Bool {
+        let normalizedTopic = topic.normalizedComparisonKey
+        guard normalizedTopic.isEmpty == false else {
+            return true
+        }
+
+        let appNames = Set(section.groupedEvents.map { $0.appName.normalizedComparisonKey })
+        if appNames.contains(normalizedTopic) {
+            return true
+        }
+
+        return genericToolLabels.contains(normalizedTopic)
+    }
+
+    private func bestStoryContext(for section: PreparedSection) -> String? {
+        let topicKey = displayTopic(for: section).normalizedComparisonKey
+
+        let detailTitles = section.groupedEvents
+            .compactMap(\.detailTitle)
+            .map { $0.trimmingCharacters(in: .whitespacesAndNewlines) }
+            .filter {
+                $0.isEmpty == false &&
+                $0.normalizedComparisonKey != topicKey &&
+                genericToolLabels.contains($0.normalizedComparisonKey) == false
+            }
+        if let detailTitle = detailTitles.first {
+            return detailTitle
+        }
+
+        let urls = section.groupedEvents
+            .compactMap(\.url)
+            .compactMap(ActivityEvidencePreprocessor.summarizedURL(from:))
+            .filter { $0.isEmpty == false }
+        if let url = urls.first {
+            return url
+        }
+
+        let highlights = sectionHighlights(for: section)
+        if let highlight = highlights.first(where: { $0.split(separator: " ").count >= 2 }) {
+            return highlight
+        }
+
+        return nil
+    }
+
+    private func dominantCategory(for section: PreparedSection) -> ActivityCategory {
+        let appNames = Set(section.groupedEvents.map { $0.appName.normalizedComparisonKey })
+        if appNames.isDisjoint(with: browserAppLabels) == false {
+            return .browser
+        }
+        if appNames.isDisjoint(with: communicationAppLabels) == false {
+            return .communication
+        }
+        if appNames.isDisjoint(with: developmentAppLabels) == false {
+            return .development
+        }
+        return .generic
     }
 
     private func sectionHighlights(for section: PreparedSection) -> [String] {
@@ -281,6 +405,32 @@ public actor JournalGenerator {
             let prefix = values.dropLast().joined(separator: ", ")
             return "\(prefix), and \(values[values.count - 1])"
         }
+    }
+
+    private enum ActivityCategory {
+        case browser
+        case communication
+        case development
+        case generic
+    }
+
+    private var browserAppLabels: Set<String> {
+        ["safari", "google chrome", "chrome", "arc", "firefox", "brave", "microsoft edge", "edge"]
+    }
+
+    private var communicationAppLabels: Set<String> {
+        ["slack", "messages", "imessage", "discord", "kakaotalk", "telegram", "whatsapp", "mail", "gmail"]
+    }
+
+    private var developmentAppLabels: Set<String> {
+        ["xcode", "visual studio code", "vs code", "cursor", "zed", "terminal", "iterm2", "warp", "nova"]
+    }
+
+    private var genericToolLabels: Set<String> {
+        browserAppLabels
+            .union(communicationAppLabels)
+            .union(developmentAppLabels)
+            .union(["finder", "notes", "calendar", "notion", "figma", "linear"])
     }
 }
 

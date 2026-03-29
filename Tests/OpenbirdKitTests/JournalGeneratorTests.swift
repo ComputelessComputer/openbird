@@ -212,6 +212,46 @@ struct JournalGeneratorTests {
         #expect(journal.markdown.contains("Codex") == false)
     }
 
+    @Test func fallbackMarkdownPrefersTaskHeadingOverBareToolName() async throws {
+        let databaseURL = FileManager.default.temporaryDirectory.appendingPathComponent(UUID().uuidString).appendingPathExtension("sqlite")
+        let store = try OpenbirdStore(databaseURL: databaseURL)
+        let generator = JournalGenerator(store: store)
+
+        let start = Calendar.current.startOfDay(for: Date()).addingTimeInterval(8 * 3600)
+        let events = [
+            ActivityEvent(
+                startedAt: start,
+                endedAt: start.addingTimeInterval(300),
+                bundleId: "com.apple.Safari",
+                appName: "Safari",
+                windowTitle: "Safari",
+                url: "https://stilla.ai/pricing",
+                visibleText: "",
+                source: "accessibility",
+                contentHash: "safari-pricing",
+                isExcluded: false
+            ),
+        ]
+
+        for event in events {
+            try await store.saveActivityEvent(event)
+        }
+
+        let journal = try await generator.generate(
+            request: JournalGenerationRequest(
+                date: start,
+                providerID: nil
+            )
+        )
+
+        let headingLine = journal.markdown
+            .components(separatedBy: .newlines)
+            .first { $0.hasPrefix("## ") }
+
+        #expect(headingLine?.contains("Reviewing stilla.ai/pricing") == true)
+        #expect(headingLine?.contains("Safari") == false)
+    }
+
     @Test func groupsNoisyChatSnapshotsBeforeSummarizing() throws {
         let start = Calendar.current.startOfDay(for: Date()).addingTimeInterval(8 * 3600)
         let events = [
