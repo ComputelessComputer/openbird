@@ -186,13 +186,20 @@ const {
 
   .header h1 {
     grid-column: 2;
+    display: flex;
+    flex-wrap: wrap;
+    align-items: center;
+    gap: 0.18em;
     margin-bottom: 0;
   }
 
   .title-tag {
+    display: inline-flex;
+    align-items: center;
     color: var(--muted);
     font-size: 0.62em;
     font-weight: 500;
+    line-height: 1;
     letter-spacing: 0.08em;
     white-space: nowrap;
   }
