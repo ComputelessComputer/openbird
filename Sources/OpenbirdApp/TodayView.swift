@@ -32,7 +32,7 @@ struct TodayView: View {
             header
 
             ScrollView {
-                VStack(alignment: .leading, spacing: 20) {
+                LazyVStack(alignment: .leading, spacing: 20) {
                     if model.needsOnboarding {
                         SetupChecklistView(model: model)
                     }
@@ -199,12 +199,12 @@ struct TodayView: View {
     }
 
     private func timelineCard(items: [TimelineItem]) -> some View {
-        VStack(alignment: .leading, spacing: 0) {
-            ForEach(Array(items.enumerated()), id: \.element.id) { index, item in
+        LazyVStack(alignment: .leading, spacing: 0) {
+            ForEach(items.indices, id: \.self) { index in
                 if index > 0 {
                     Divider()
                 }
-                timelineRow(item)
+                timelineRow(items[index])
                     .padding(24)
             }
         }
@@ -346,18 +346,18 @@ struct TodayView: View {
             timelinePreparationStatus = nil
         }
 
-        let rawItems = await Task.detached(priority: .userInitiated) {
-            Self.buildTimelineItems(
-                rawEvents: rawEvents,
-                installedApplications: installedApplications
-            )
-        }.value
-
-        guard Task.isCancelled == false else {
-            return
-        }
-
         guard let journal else {
+            let rawItems = await Task.detached(priority: .userInitiated) {
+                Self.buildTimelineItems(
+                    rawEvents: rawEvents,
+                    installedApplications: installedApplications
+                )
+            }.value
+
+            guard Task.isCancelled == false else {
+                return
+            }
+
             timelineContent = rawItems.isEmpty ? .empty : .raw(rawItems)
             return
         }
@@ -366,8 +366,7 @@ struct TodayView: View {
         let parsedJournal = await Task.detached(priority: .userInitiated) {
             Self.parseJournalContent(
                 journal: journal,
-                rawEvents: rawEvents,
-                rawItems: rawItems
+                rawEvents: rawEvents
             )
         }.value
 
@@ -376,6 +375,18 @@ struct TodayView: View {
         }
 
         guard parsedJournal.hasSummaryContent else {
+            timelinePreparationStatus = .groupingActivity
+            let rawItems = await Task.detached(priority: .userInitiated) {
+                Self.buildTimelineItems(
+                    rawEvents: rawEvents,
+                    installedApplications: installedApplications
+                )
+            }.value
+
+            guard Task.isCancelled == false else {
+                return
+            }
+
             timelineContent = rawItems.isEmpty ? .empty : .raw(rawItems)
             return
         }
@@ -407,12 +418,11 @@ struct TodayView: View {
 
     nonisolated private static func parseJournalContent(
         journal: DailyJournal,
-        rawEvents: [ActivityEvent],
-        rawItems: [TimelineItem]
+        rawEvents: [ActivityEvent]
     ) -> ParsedJournalContent {
         let document = JournalMarkdownParser.parse(journal.markdown)
         let hasSummaryContent = document.leadingBlocks.isEmpty == false || document.sections.isEmpty == false
-        let hasNewerActivity = hasSummaryContent && rawItems.isEmpty == false && rawEvents.contains {
+        let hasNewerActivity = hasSummaryContent && rawEvents.contains {
             $0.isExcluded == false && $0.endedAt.timeIntervalSince(journal.updatedAt) > 10 * 60
         }
 

@@ -68,25 +68,44 @@ public enum ActivityEvidencePreprocessor {
     ]
 
     public static func groupedMeaningfulEvents(from events: [ActivityEvent]) -> [GroupedActivityEvent] {
-        let meaningfulEvents = events.filter(isMeaningful)
-        guard let firstEvent = meaningfulEvents.first else {
-            return []
-        }
+        var preparedEvents: [PreparedEvent] = []
+        preparedEvents.reserveCapacity(events.count)
 
-        var groups = [makeGroup(from: [firstEvent])]
-        for event in meaningfulEvents.dropFirst() {
-            guard let lastGroup = groups.last else {
-                groups.append(makeGroup(from: [event]))
+        for event in events {
+            if event.bundleId == "com.apple.loginwindow" || normalizedComparisonKey(for: event.appName) == "loginwindow" {
                 continue
             }
 
-            if shouldMerge(lastGroup, with: event) {
-                groups[groups.count - 1] = makeGroup(from: lastGroup.sourceEvents + [event])
+            let descriptors = descriptorComponents(for: event)
+            guard descriptors.isEmpty == false else {
+                continue
+            }
+            preparedEvents.append(
+                PreparedEvent(
+                    event: event,
+                    descriptors: descriptors
+                )
+            )
+        }
+
+        guard let firstEvent = preparedEvents.first else {
+            return []
+        }
+
+        var groups: [GroupedActivityEvent] = []
+        groups.reserveCapacity(preparedEvents.count)
+        var currentGroup = GroupAccumulator(preparedEvent: firstEvent)
+
+        for preparedEvent in preparedEvents.dropFirst() {
+            if currentGroup.shouldMerge(with: preparedEvent) {
+                currentGroup.merge(preparedEvent)
             } else {
-                groups.append(makeGroup(from: [event]))
+                groups.append(currentGroup.groupedEvent)
+                currentGroup = GroupAccumulator(preparedEvent: preparedEvent)
             }
         }
 
+        groups.append(currentGroup.groupedEvent)
         return groups
     }
 
@@ -95,11 +114,11 @@ public enum ActivityEvidencePreprocessor {
             return false
         }
 
-        return descriptorComponents(for: [event]).isEmpty == false
+        return descriptorComponents(for: event).isEmpty == false
     }
 
     public static func cleanedExcerpt(for event: ActivityEvent) -> String {
-        descriptorComponents(for: [event]).excerpt ?? ""
+        descriptorComponents(for: event).excerpt ?? ""
     }
 
     public static func summarizedURL(from urlString: String?) -> String? {
@@ -126,109 +145,13 @@ public enum ActivityEvidencePreprocessor {
         return summary.count > 80 ? String(summary.prefix(80)) + "…" : summary
     }
 
-    private static func shouldMerge(_ group: GroupedActivityEvent, with event: ActivityEvent) -> Bool {
-        guard group.bundleId == event.bundleId, group.isExcluded == event.isExcluded else {
-            return false
-        }
-
-        let gap = event.startedAt.timeIntervalSince(group.endedAt)
-        guard gap <= maxMergeGap else {
-            return false
-        }
-
-        if group.sourceEvents.contains(where: { $0.contentHash == event.contentHash }) {
-            return true
-        }
-
-        let groupDescriptors = descriptorComponents(for: group.sourceEvents)
-        let eventDescriptors = descriptorComponents(for: [event])
-
-        if groupDescriptors.detailTitles.isDisjoint(with: eventDescriptors.detailTitles) == false {
-            return true
-        }
-
-        if groupDescriptors.urls.isDisjoint(with: eventDescriptors.urls) == false {
-            return true
-        }
-
-        if groupDescriptors.excerpts.isDisjoint(with: eventDescriptors.excerpts) == false {
-            return true
-        }
-
-        return false
-    }
-
-    private static func makeGroup(from events: [ActivityEvent]) -> GroupedActivityEvent {
-        let descriptors = descriptorComponents(for: events)
-
-        return GroupedActivityEvent(
-            id: events.first?.id ?? UUID().uuidString,
-            startedAt: events.map(\.startedAt).min() ?? Date(),
-            endedAt: events.map(\.endedAt).max() ?? Date(),
-            bundleId: events.first?.bundleId ?? "",
-            appName: events.first?.appName ?? "Activity",
-            detailTitle: descriptors.preferredDetailTitle,
-            url: descriptors.preferredURL,
-            excerpt: descriptors.displayExcerpt,
-            isExcluded: events.contains(where: \.isExcluded),
-            sourceEvents: events
-        )
-    }
-
     private static func descriptorComponents(for events: [ActivityEvent]) -> DescriptorComponents {
-        var detailTitles = Set<String>()
-        var urls = Set<String>()
-        var excerpts = Set<String>()
-        var preferredDetailTitle: String?
-        var preferredURL: String?
-        var excerptPieces: [String] = []
-
+        var accumulator = DescriptorAccumulator()
         for event in events {
-            if let detailTitle = cleanText(event.detailTitle) {
-                let key = normalizedComparisonKey(for: detailTitle)
-                if key.isEmpty == false {
-                    detailTitles.insert(key)
-                    if preferredDetailTitle == nil || detailTitle.count > (preferredDetailTitle?.count ?? 0) {
-                        preferredDetailTitle = detailTitle
-                    }
-                }
-            }
-
-            if let rawURL = cleanText(event.url),
-               let urlSummary = summarizedURL(from: rawURL) {
-                let key = normalizedComparisonKey(for: urlSummary)
-                if key.isEmpty == false {
-                    urls.insert(key)
-                    if preferredURL == nil || urlSummary.count > (summarizedURL(from: preferredURL)?.count ?? 0) {
-                        preferredURL = rawURL
-                    }
-                }
-            }
-
-            if let excerpt = cleanedVisibleText(
-                event.visibleText,
-                excluding: [event.appName, event.windowTitle]
-            ) {
-                let key = normalizedComparisonKey(for: excerpt)
-                if key.isEmpty == false {
-                    excerpts.insert(key)
-                    if excerptPieces.contains(where: { normalizedComparisonKey(for: $0) == key }) == false {
-                        excerptPieces.append(excerpt)
-                    }
-                }
-            }
+            accumulator.include(event)
         }
 
-        let displayExcerpt = excerptPieces.prefix(2).joined(separator: " • ")
-        return DescriptorComponents(
-            detailTitles: detailTitles,
-            urls: urls,
-            excerpts: excerpts,
-            preferredDetailTitle: preferredDetailTitle,
-            preferredURL: preferredURL,
-            excerpt: excerptPieces.first,
-            displayExcerpt: displayExcerpt.count > 220 ? String(displayExcerpt.prefix(219)) + "…" : displayExcerpt
-        )
+        return accumulator.components
     }
 
     private static func cleanedVisibleText(_ text: String, excluding values: [String]) -> String? {
@@ -290,18 +213,212 @@ public enum ActivityEvidencePreprocessor {
             .filter { $0.isEmpty == false }
             .joined(separator: " ")
     }
-}
 
-private struct DescriptorComponents {
-    let detailTitles: Set<String>
-    let urls: Set<String>
-    let excerpts: Set<String>
-    let preferredDetailTitle: String?
-    let preferredURL: String?
-    let excerpt: String?
-    let displayExcerpt: String
+    private static func descriptorComponents(for event: ActivityEvent) -> DescriptorComponents {
+        var accumulator = DescriptorAccumulator()
+        accumulator.include(event)
+        return accumulator.components
+    }
 
-    var isEmpty: Bool {
-        detailTitles.isEmpty && urls.isEmpty && excerpts.isEmpty
+    private struct PreparedEvent {
+        let event: ActivityEvent
+        let descriptors: DescriptorComponents
+    }
+
+    private struct GroupAccumulator {
+        let id: String
+        let bundleId: String
+        let appName: String
+        let isExcluded: Bool
+
+        var startedAt: Date
+        var endedAt: Date
+        var sourceEvents: [ActivityEvent]
+        var sourceEventHashes: Set<String>
+        var descriptors: DescriptorComponents
+
+        init(preparedEvent: PreparedEvent) {
+            let event = preparedEvent.event
+            id = event.id
+            bundleId = event.bundleId
+            appName = event.appName
+            isExcluded = event.isExcluded
+            startedAt = event.startedAt
+            endedAt = event.endedAt
+            sourceEvents = [event]
+            sourceEventHashes = [event.contentHash]
+            descriptors = preparedEvent.descriptors
+        }
+
+        func shouldMerge(with preparedEvent: PreparedEvent) -> Bool {
+            let event = preparedEvent.event
+            guard bundleId == event.bundleId, isExcluded == event.isExcluded else {
+                return false
+            }
+
+            let gap = event.startedAt.timeIntervalSince(endedAt)
+            guard gap <= ActivityEvidencePreprocessor.maxMergeGap else {
+                return false
+            }
+
+            if sourceEventHashes.contains(event.contentHash) {
+                return true
+            }
+
+            if descriptors.detailTitles.isDisjoint(with: preparedEvent.descriptors.detailTitles) == false {
+                return true
+            }
+
+            if descriptors.urls.isDisjoint(with: preparedEvent.descriptors.urls) == false {
+                return true
+            }
+
+            if descriptors.excerpts.isDisjoint(with: preparedEvent.descriptors.excerpts) == false {
+                return true
+            }
+
+            return false
+        }
+
+        mutating func merge(_ preparedEvent: PreparedEvent) {
+            let event = preparedEvent.event
+            startedAt = min(startedAt, event.startedAt)
+            endedAt = max(endedAt, event.endedAt)
+            sourceEvents.append(event)
+            sourceEventHashes.insert(event.contentHash)
+
+            var mergedDescriptors = DescriptorAccumulator(components: descriptors)
+            mergedDescriptors.include(preparedEvent.descriptors)
+            descriptors = mergedDescriptors.components
+        }
+
+        var groupedEvent: GroupedActivityEvent {
+            GroupedActivityEvent(
+                id: id,
+                startedAt: startedAt,
+                endedAt: endedAt,
+                bundleId: bundleId,
+                appName: appName,
+                detailTitle: descriptors.preferredDetailTitle,
+                url: descriptors.preferredURL,
+                excerpt: descriptors.displayExcerpt,
+                isExcluded: isExcluded,
+                sourceEvents: sourceEvents
+            )
+        }
+    }
+
+    private struct DescriptorAccumulator {
+        var detailTitles: Set<String>
+        var urls: Set<String>
+        var excerpts: Set<String>
+        var preferredDetailTitle: String?
+        var preferredURL: String?
+        var excerptPieces: [String]
+
+        init(components: DescriptorComponents? = nil) {
+            detailTitles = components?.detailTitles ?? []
+            urls = components?.urls ?? []
+            excerpts = components?.excerpts ?? []
+            preferredDetailTitle = components?.preferredDetailTitle
+            preferredURL = components?.preferredURL
+            excerptPieces = components?.excerptPieces ?? []
+        }
+
+        mutating func include(_ event: ActivityEvent) {
+            if let detailTitle = ActivityEvidencePreprocessor.cleanText(event.detailTitle) {
+                let key = ActivityEvidencePreprocessor.normalizedComparisonKey(for: detailTitle)
+                if key.isEmpty == false {
+                    detailTitles.insert(key)
+                    if preferredDetailTitle == nil || detailTitle.count > (preferredDetailTitle?.count ?? 0) {
+                        preferredDetailTitle = detailTitle
+                    }
+                }
+            }
+
+            if let rawURL = ActivityEvidencePreprocessor.cleanText(event.url),
+               let urlSummary = ActivityEvidencePreprocessor.summarizedURL(from: rawURL) {
+                let key = ActivityEvidencePreprocessor.normalizedComparisonKey(for: urlSummary)
+                if key.isEmpty == false {
+                    urls.insert(key)
+                    if preferredURL == nil || urlSummary.count > (ActivityEvidencePreprocessor.summarizedURL(from: preferredURL)?.count ?? 0) {
+                        preferredURL = rawURL
+                    }
+                }
+            }
+
+            if let excerpt = ActivityEvidencePreprocessor.cleanedVisibleText(
+                event.visibleText,
+                excluding: [event.appName, event.windowTitle]
+            ) {
+                let key = ActivityEvidencePreprocessor.normalizedComparisonKey(for: excerpt)
+                if key.isEmpty == false && excerpts.insert(key).inserted {
+                    excerptPieces.append(excerpt)
+                }
+            }
+        }
+
+        mutating func include(_ components: DescriptorComponents) {
+            detailTitles.formUnion(components.detailTitles)
+            urls.formUnion(components.urls)
+
+            preferredDetailTitle = longestText(between: preferredDetailTitle, and: components.preferredDetailTitle)
+            preferredURL = preferredURLWithLongestSummary(between: preferredURL, and: components.preferredURL)
+
+            for excerpt in components.excerptPieces {
+                let key = ActivityEvidencePreprocessor.normalizedComparisonKey(for: excerpt)
+                if key.isEmpty == false && excerpts.insert(key).inserted {
+                    excerptPieces.append(excerpt)
+                }
+            }
+        }
+
+        var components: DescriptorComponents {
+            let displayExcerpt = excerptPieces.prefix(2).joined(separator: " • ")
+            return DescriptorComponents(
+                detailTitles: detailTitles,
+                urls: urls,
+                excerpts: excerpts,
+                preferredDetailTitle: preferredDetailTitle,
+                preferredURL: preferredURL,
+                excerpt: excerptPieces.first,
+                displayExcerpt: displayExcerpt.count > 220 ? String(displayExcerpt.prefix(219)) + "…" : displayExcerpt,
+                excerptPieces: excerptPieces
+            )
+        }
+
+        private func longestText(between lhs: String?, and rhs: String?) -> String? {
+            switch (lhs, rhs) {
+            case let (lhs?, rhs?) where rhs.count > lhs.count:
+                return rhs
+            case let (lhs?, _):
+                return lhs
+            case let (nil, rhs?):
+                return rhs
+            default:
+                return nil
+            }
+        }
+
+        private func preferredURLWithLongestSummary(between lhs: String?, and rhs: String?) -> String? {
+            let lhsLength = ActivityEvidencePreprocessor.summarizedURL(from: lhs)?.count ?? 0
+            let rhsLength = ActivityEvidencePreprocessor.summarizedURL(from: rhs)?.count ?? 0
+            return rhsLength > lhsLength ? rhs : lhs
+        }
+    }
+
+    private struct DescriptorComponents {
+        let detailTitles: Set<String>
+        let urls: Set<String>
+        let excerpts: Set<String>
+        let preferredDetailTitle: String?
+        let preferredURL: String?
+        let excerpt: String?
+        let displayExcerpt: String
+        let excerptPieces: [String]
+
+        var isEmpty: Bool {
+            detailTitles.isEmpty && urls.isEmpty && excerpts.isEmpty
+        }
     }
 }
