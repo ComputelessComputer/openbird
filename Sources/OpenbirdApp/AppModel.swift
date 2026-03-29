@@ -26,6 +26,20 @@ final class AppModel: ObservableObject {
         let state: State
     }
 
+    struct StatusMenuExclusionState: Equatable {
+        struct Action: Equatable {
+            let title: String
+            let pattern: String
+        }
+
+        let app: Action?
+        let domain: Action?
+
+        var hasActions: Bool {
+            app != nil || domain != nil
+        }
+    }
+
     private struct PendingAssistantReply {
         var message: ChatMessage
         var state: ChatDisplayMessage.State
@@ -59,7 +73,6 @@ final class AppModel: ObservableObject {
     @Published var isShowingRawLogInspector = false
     @Published private(set) var isSendingChat = false
     @Published private(set) var shouldFocusChatComposer = false
-    @Published private(set) var statusMenuContext: CurrentActivityContext?
     @Published private(set) var accessibilityTrusted = false
     @Published private(set) var dayLoadStatus: DayLoadStatus?
 
@@ -276,38 +289,6 @@ final class AppModel: ObservableObject {
             return "Resumes at \(capturePauseUntil.formatted(date: .omitted, time: .shortened))"
         }
         return "Paused until resumed"
-    }
-
-    var currentAppExclusionTitle: String {
-        guard let context = statusMenuContext else {
-            return "Exclude current app"
-        }
-        return "Exclude current app - \(context.appName)"
-    }
-
-    var currentDomainExclusionTitle: String {
-        guard let domain = statusMenuContext?.domain else {
-            return "Exclude current domain"
-        }
-        return "Exclude current domain - \(domain)"
-    }
-
-    var canExcludeCurrentApp: Bool {
-        guard let bundleID = statusMenuContext?.bundleID else {
-            return false
-        }
-        if let currentBundleID = Bundle.main.bundleIdentifier,
-           currentBundleID.caseInsensitiveCompare(bundleID) == .orderedSame {
-            return false
-        }
-        return hasExclusion(kind: .bundleID, pattern: bundleID) == false
-    }
-
-    var canExcludeCurrentDomain: Bool {
-        guard let domain = statusMenuContext?.domain else {
-            return false
-        }
-        return hasExclusion(kind: .domain, pattern: domain) == false
     }
 
     var menuVersionText: String? {
@@ -642,22 +623,15 @@ final class AppModel: ObservableObject {
         }
     }
 
-    func refreshStatusMenuContext() {
-        statusMenuContext = currentActivityContextService.currentContext()
-    }
+    func statusMenuExclusionState() -> StatusMenuExclusionState {
+        let context = currentActivityContextService.currentContext()
+        let appAction = excludableAppAction(for: context)
+        let domainAction = excludableDomainAction(for: context)
 
-    func excludeCurrentApp() {
-        guard let bundleID = statusMenuContext?.bundleID else {
-            return
-        }
-        addExclusion(kind: .bundleID, pattern: bundleID)
-    }
-
-    func excludeCurrentDomain() {
-        guard let domain = statusMenuContext?.domain else {
-            return
-        }
-        addExclusion(kind: .domain, pattern: domain)
+        return StatusMenuExclusionState(
+            app: appAction,
+            domain: domainAction
+        )
     }
 
     func scheduleAutomaticProviderConnectionCheckIfNeeded() {
@@ -985,6 +959,37 @@ final class AppModel: ObservableObject {
 
     func installedApplication(for bundleID: String) -> InstalledApplication? {
         installedApplications.first { $0.bundleID.caseInsensitiveCompare(bundleID) == .orderedSame }
+    }
+
+    private func excludableAppAction(for context: CurrentActivityContext?) -> StatusMenuExclusionState.Action? {
+        guard let context else {
+            return nil
+        }
+        if let currentBundleID = Bundle.main.bundleIdentifier,
+           currentBundleID.caseInsensitiveCompare(context.bundleID) == .orderedSame {
+            return nil
+        }
+        guard hasExclusion(kind: .bundleID, pattern: context.bundleID) == false else {
+            return nil
+        }
+
+        return StatusMenuExclusionState.Action(
+            title: "Exclude current app - \(context.appName)",
+            pattern: context.bundleID
+        )
+    }
+
+    private func excludableDomainAction(for context: CurrentActivityContext?) -> StatusMenuExclusionState.Action? {
+        guard let domain = context?.domain,
+              hasExclusion(kind: .domain, pattern: domain) == false
+        else {
+            return nil
+        }
+
+        return StatusMenuExclusionState.Action(
+            title: "Exclude current domain - \(domain)",
+            pattern: domain
+        )
     }
 
     private func hasExclusion(kind: ExclusionKind, pattern: String) -> Bool {

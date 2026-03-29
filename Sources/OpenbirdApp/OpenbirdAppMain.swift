@@ -1,4 +1,5 @@
 import AppKit
+import OpenbirdKit
 import SwiftUI
 
 enum OpenbirdSceneID {
@@ -145,19 +146,10 @@ private struct OpenbirdStatusMenu: View {
             }
         }
 
-        Menu("Exclude") {
-            Button(model.currentAppExclusionTitle) {
-                model.excludeCurrentApp()
-            }
-            .disabled(model.canExcludeCurrentApp == false)
-
-            Divider()
-
-            Button(model.currentDomainExclusionTitle) {
-                model.excludeCurrentDomain()
-            }
-            .disabled(model.canExcludeCurrentDomain == false)
+        ExcludeStatusMenu(state: model.statusMenuExclusionState()) { kind, pattern in
+            model.addExclusion(kind: kind, pattern: pattern)
         }
+        .equatable()
 
         if let versionText = model.menuVersionText {
             Divider()
@@ -181,7 +173,6 @@ private struct OpenbirdStatusMenu: View {
             appLifecycle.quitCompletely()
         }
         .onAppear {
-            model.refreshStatusMenuContext()
             Task { await model.refreshCollectorState() }
         }
     }
@@ -194,6 +185,36 @@ private struct OpenbirdStatusMenu: View {
     private func openSettings() {
         NSApp.activate(ignoringOtherApps: true)
         NSApp.sendAction(Selector(("showSettingsWindow:")), to: nil, from: nil)
+    }
+}
+
+private struct ExcludeStatusMenu: View, Equatable {
+    let state: AppModel.StatusMenuExclusionState
+    let exclude: (ExclusionKind, String) -> Void
+
+    nonisolated static func == (lhs: ExcludeStatusMenu, rhs: ExcludeStatusMenu) -> Bool {
+        lhs.state == rhs.state
+    }
+
+    var body: some View {
+        Menu("Exclude") {
+            if let appAction = state.app {
+                Button(appAction.title) {
+                    exclude(.bundleID, appAction.pattern)
+                }
+            }
+
+            if state.app != nil, state.domain != nil {
+                Divider()
+            }
+
+            if let domainAction = state.domain {
+                Button(domainAction.title) {
+                    exclude(.domain, domainAction.pattern)
+                }
+            }
+        }
+        .disabled(state.hasActions == false)
     }
 }
 
