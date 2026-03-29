@@ -199,27 +199,20 @@ public struct AccessibilitySnapshotter: Sendable {
 
     private func prioritizedChildren(for element: AXUIElement) -> [AXUIElement] {
         copyChildren(for: element)
-            .map { child in
+            .enumerated()
+            .map { index, child in
                 let role = stringAttribute(kAXRoleAttribute, on: child) ?? ""
                 return PrioritizedChild(
                     element: child,
-                    role: role,
                     priority: childPriority(for: role),
-                    area: elementArea(for: child),
-                    originX: elementOriginX(for: child)
+                    order: index
                 )
             }
             .sorted { lhs, rhs in
                 if lhs.priority != rhs.priority {
                     return lhs.priority > rhs.priority
                 }
-                if lhs.area != rhs.area {
-                    return lhs.area > rhs.area
-                }
-                if lhs.originX != rhs.originX {
-                    return lhs.originX > rhs.originX
-                }
-                return lhs.role < rhs.role
+                return lhs.order < rhs.order
             }
             .map(\.element)
     }
@@ -261,68 +254,12 @@ public struct AccessibilitySnapshotter: Sendable {
         return 2
     }
 
-    private func elementArea(for element: AXUIElement) -> CGFloat {
-        guard let size = cgSizeAttribute(kAXSizeAttribute, on: element) else {
-            return 0
-        }
-        return size.width * size.height
-    }
-
-    private func elementOriginX(for element: AXUIElement) -> CGFloat {
-        cgPointAttribute(kAXPositionAttribute, on: element)?.x ?? 0
-    }
-
-    private func cgPointAttribute(_ attribute: String, on element: AXUIElement) -> CGPoint? {
-        var value: CFTypeRef?
-        let result = AXUIElementCopyAttributeValue(element, attribute as CFString, &value)
-        guard result == .success,
-              let axValue = value,
-              CFGetTypeID(axValue) == AXValueGetTypeID()
-        else {
-            return nil
-        }
-
-        let pointValue = unsafeDowncast(axValue, to: AXValue.self)
-        guard AXValueGetType(pointValue) == .cgPoint else {
-            return nil
-        }
-
-        var point = CGPoint.zero
-        guard AXValueGetValue(pointValue, .cgPoint, &point) else {
-            return nil
-        }
-        return point
-    }
-
-    private func cgSizeAttribute(_ attribute: String, on element: AXUIElement) -> CGSize? {
-        var value: CFTypeRef?
-        let result = AXUIElementCopyAttributeValue(element, attribute as CFString, &value)
-        guard result == .success,
-              let axValue = value,
-              CFGetTypeID(axValue) == AXValueGetTypeID()
-        else {
-            return nil
-        }
-
-        let sizeValue = unsafeDowncast(axValue, to: AXValue.self)
-        guard AXValueGetType(sizeValue) == .cgSize else {
-            return nil
-        }
-
-        var size = CGSize.zero
-        guard AXValueGetValue(sizeValue, .cgSize, &size) else {
-            return nil
-        }
-        return size
-    }
 }
 
 private struct PrioritizedChild {
     let element: AXUIElement
-    let role: String
     let priority: Int
-    let area: CGFloat
-    let originX: CGFloat
+    let order: Int
 }
 
 private extension Array where Element: Hashable {
