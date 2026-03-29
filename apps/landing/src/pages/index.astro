@@ -3,6 +3,7 @@ import BaseLayout from "../layouts/BaseLayout.astro";
 
 const releaseUrl = "https://github.com/ComputelessComputer/openbird/releases/latest";
 const sourceUrl = "https://github.com/ComputelessComputer/openbird";
+const latestReleaseApiUrl = "https://api.github.com/repos/ComputelessComputer/openbird/releases/latest";
 
 const detailItems = [
   "Local-first by default. No account required. No backend required.",
@@ -47,7 +48,7 @@ const detailItems = [
 
     <p>
       Openbird is available now.
-      <a href={releaseUrl}>Download the latest release</a>.
+      <a href={releaseUrl} class="latest-release-link">Download the latest release</a>.
       <a href={sourceUrl}>Read the source code on GitHub</a>.
     </p>
 
@@ -116,8 +117,66 @@ const detailItems = [
 
     <p class="small muted">
       Openbird is a local-first macOS activity journal.
-      <a href={releaseUrl}>Latest release</a>.
+      <a href={releaseUrl} class="latest-release-link">Latest release</a>.
       <a href={sourceUrl}>Source code</a>.
     </p>
   </main>
+
+  <script define:vars={{ latestReleaseApiUrl, releaseUrl }}>
+    const latestReleaseLinks = Array.from(document.querySelectorAll(".latest-release-link"));
+
+    const setReleaseHref = (href) => {
+      for (const link of latestReleaseLinks) {
+        if (link instanceof HTMLAnchorElement) {
+          link.href = href;
+        }
+      }
+    };
+
+    const pickDownloadAsset = (assets) => {
+      if (!Array.isArray(assets)) {
+        return null;
+      }
+
+      return (
+        assets.find((asset) =>
+          typeof asset?.name === "string" &&
+          typeof asset?.browser_download_url === "string" &&
+          asset.name.endsWith(".dmg") &&
+          asset.name.includes("-macos-arm64")
+        ) ??
+        assets.find((asset) =>
+          typeof asset?.name === "string" &&
+          typeof asset?.browser_download_url === "string" &&
+          asset.name.endsWith(".dmg")
+        ) ??
+        null
+      );
+    };
+
+    const resolveLatestDownload = async () => {
+      try {
+        const response = await fetch(latestReleaseApiUrl, {
+          headers: {
+            Accept: "application/vnd.github+json",
+          },
+        });
+
+        if (!response.ok) {
+          return;
+        }
+
+        const release = await response.json();
+        const asset = pickDownloadAsset(release?.assets);
+
+        if (asset?.browser_download_url) {
+          setReleaseHref(asset.browser_download_url);
+        }
+      } catch {
+        setReleaseHref(releaseUrl);
+      }
+    };
+
+    void resolveLatestDownload();
+  </script>
 </BaseLayout>
