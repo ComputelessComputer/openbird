@@ -147,7 +147,6 @@ final class AppModel: ObservableObject {
         initialRefreshTask = Task {
             await refresh()
         }
-        checkForUpdatesIfNeeded()
     }
 
     deinit {
@@ -468,34 +467,18 @@ final class AppModel: ObservableObject {
                 title: "Loading saved summary",
                 detail: "Checking whether Openbird already has a journal summary cached for this day."
             )
-            var loadedJournal = try await store.loadJournal(for: day)
-
-            let shouldGenerateDefaultJournal = loadedJournal == nil && loadedRawEvents.isEmpty == false
-            let totalDayLoadSteps = shouldGenerateDefaultJournal ? 6 : 5
-
-            if shouldGenerateDefaultJournal {
-                dayLoadStatus = Self.makeDayLoadStatus(
-                    step: 4,
-                    totalSteps: totalDayLoadSteps,
-                    title: "Generating the default summary",
-                    detail: "Building the day view that opens by default from the captured activity you already have."
-                )
-                isGeneratingTodayJournal = true
-                defer {
-                    isGeneratingTodayJournal = false
-                }
-                loadedJournal = try await generateJournal(for: requestedDay)
-            }
+            let loadedJournal = try await store.loadJournal(for: day)
+            let totalDayLoadSteps = 5
 
             dayLoadStatus = Self.makeDayLoadStatus(
-                step: shouldGenerateDefaultJournal ? 5 : 4,
+                step: 4,
                 totalSteps: totalDayLoadSteps,
                 title: "Restoring chat thread",
                 detail: "Finding the conversation that belongs to this day so follow-up questions stay anchored."
             )
             let thread = try await chatService.ensureThread(for: day)
             dayLoadStatus = Self.makeDayLoadStatus(
-                step: shouldGenerateDefaultJournal ? 6 : 5,
+                step: 5,
                 totalSteps: totalDayLoadSteps,
                 title: "Loading prior answers",
                 detail: "Pulling earlier messages into memory so the dock can answer with full context."
@@ -554,7 +537,7 @@ final class AppModel: ObservableObject {
     }
 
     func handleAppDidBecomeActive() {
-        checkForUpdatesIfNeeded()
+        refreshAccessibilityPermissionState()
     }
 
     func requestChatFocus() {

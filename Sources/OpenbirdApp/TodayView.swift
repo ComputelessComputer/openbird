@@ -127,7 +127,7 @@ struct TodayView: View {
                         ProgressView()
                             .controlSize(.small)
                     }
-                    Text(model.isGeneratingTodayJournal ? "Refreshing…" : "Refresh")
+                    Text(model.isGeneratingTodayJournal ? inFlightJournalActionTitle : journalActionTitle)
                 }
             }
             .buttonStyle(.borderedProminent)
@@ -245,6 +245,14 @@ struct TodayView: View {
             rawEventLastID: model.rawEvents.last?.id,
             installedApplicationCount: model.installedApplications.count
         )
+    }
+
+    private var journalActionTitle: String {
+        model.todayJournal == nil ? "Generate" : "Refresh"
+    }
+
+    private var inFlightJournalActionTitle: String {
+        model.todayJournal == nil ? "Generating…" : "Refreshing…"
     }
 
     private var activeLoadingStatus: LoadingDisplayStatus? {

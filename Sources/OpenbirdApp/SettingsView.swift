@@ -116,15 +116,18 @@ struct SettingsView: View {
         case .ollama:
             return "Runs fully local. Default endpoint is 127.0.0.1:11434."
         case .openAICompatible:
-            return "Use this for LM Studio, vLLM, LocalAI, or any OpenAI-compatible endpoint."
+            if isLikelyLocalEndpoint(model.editingProvider.baseURL) {
+                return "Requests go to the endpoint you configure. With a local endpoint like LM Studio, activity stays on your Mac."
+            }
+            return "Requests go to the endpoint you configure. If that endpoint is remote, activity context leaves your Mac for journal, chat, and embeddings."
         case .openAI:
-            return "Uses your OpenAI API key with the standard OpenAI API."
+            return "Uses your OpenAI API key with the standard OpenAI API. Activity context leaves your Mac for journal, chat, and embeddings."
         case .anthropic:
-            return "Uses Claude for journal generation and chat. Embeddings stay on local search."
+            return "Uses Claude for journal generation and chat. Activity context leaves your Mac for those requests."
         case .google:
-            return "Uses a Gemini API key from Google AI Studio."
+            return "Uses a Gemini API key from Google AI Studio. Activity context leaves your Mac for journal, chat, and embeddings."
         case .openRouter:
-            return "Uses one OpenRouter key to access many hosted models."
+            return "Uses one OpenRouter key to access many hosted models. Activity context leaves your Mac for journal, chat, and embeddings."
         }
     }
 
@@ -327,5 +330,15 @@ struct SettingsView: View {
     private func addCurrentExclusion() {
         model.addExclusion(kind: exclusionKind, pattern: trimmedNewExclusionPattern)
         newExclusionPattern = ""
+    }
+
+    private func isLikelyLocalEndpoint(_ rawValue: String) -> Bool {
+        guard let components = URLComponents(string: rawValue.trimmingCharacters(in: .whitespacesAndNewlines)),
+              let host = components.host?.lowercased()
+        else {
+            return false
+        }
+
+        return host == "127.0.0.1" || host == "localhost" || host == "::1"
     }
 }
