@@ -54,6 +54,8 @@ final class AppModel: ObservableObject {
     }
 
     private static let automaticUpdateCheckInterval: TimeInterval = 60 * 60 * 12
+    private static let automaticSelectedDayRefreshInterval: TimeInterval = 5
+    private static let automaticJournalGenerationDelay: Duration = .seconds(20)
     private static let dismissedUpdateVersionKey = "openbird.dismissedUpdateVersion"
     private static let lastUpdateCheckDateKey = "openbird.lastUpdateCheckDate"
     @Published var settings = AppSettings()
@@ -102,11 +104,13 @@ final class AppModel: ObservableObject {
     private var providerConnectionTask: Task<Void, Never>?
     private var providerSaveTask: Task<Void, Never>?
     private var updateCheckTask: Task<Void, Never>?
+    private var automaticJournalGenerationTask: Task<Void, Never>?
     @Published private var pendingUserChatMessage: ChatMessage?
     @Published private var pendingAssistantReply: PendingAssistantReply?
     private var chatSendTask: Task<Void, Never>?
     private var providerConnectionRequestID = UUID()
     private var updateCheckRequestID = UUID()
+    private var lastAutomaticSelectedDayRefreshAt: Date?
     private var currentDayAnchor: Date
     private var isShuttingDown = false
     private let logger = OpenbirdLog.app
@@ -159,6 +163,7 @@ final class AppModel: ObservableObject {
         providerConnectionTask?.cancel()
         providerSaveTask?.cancel()
         updateCheckTask?.cancel()
+        automaticJournalGenerationTask?.cancel()
         collectorRuntime.stop()
     }
 
@@ -412,6 +417,16 @@ final class AppModel: ObservableObject {
         return currentDay
     }
 
+    nonisolated static func uncompiledActivityEvents(
+        from rawEvents: [ActivityEvent],
+        comparedTo journal: DailyJournal
+    ) -> [ActivityEvent] {
+        let compiledSourceEventIDs = Set(journal.sections.flatMap(\.sourceEventIDs))
+        return rawEvents.filter { event in
+            event.isExcluded == false && compiledSourceEventIDs.contains(event.id) == false
+        }
+    }
+
     func prepareForTermination() async {
         guard isShuttingDown == false else {
             return
@@ -424,6 +439,7 @@ final class AppModel: ObservableObject {
         providerConnectionTask?.cancel()
         providerSaveTask?.cancel()
         updateCheckTask?.cancel()
+        automaticJournalGenerationTask?.cancel()
         await collectorRuntime.stopAndWait()
     }
 
@@ -435,6 +451,7 @@ final class AppModel: ObservableObject {
         let requestedDay = selectedDay
         let requestedDayString = OpenbirdDateFormatting.dayString(for: requestedDay)
         logger.notice("Refreshing app state for \(requestedDayString, privacy: .public)")
+        cancelAutomaticJournalGeneration()
         chatSendTask?.cancel()
         clearTransientChatState()
         refreshAccessibilityPermissionState()
@@ -513,6 +530,8 @@ final class AppModel: ObservableObject {
             todayJournal = loadedJournal
             chatThread = thread
             chatMessages = loadedChatMessages
+            lastAutomaticSelectedDayRefreshAt = Date()
+            scheduleAutomaticJournalGenerationIfNeeded()
             logger.notice(
                 "Refresh completed for \(day, privacy: .public); events=\(loadedRawEvents.count, privacy: .public) journalLoaded=\((loadedJournal != nil), privacy: .public) chatMessages=\(loadedChatMessages.count, privacy: .public)"
             )
@@ -638,6 +657,7 @@ final class AppModel: ObservableObject {
         handleCurrentDayChangeIfNeeded()
         do {
             settings = try await loadCurrentSettings()
+            await refreshSelectedDayContentIfNeeded()
         } catch {
             logger.error("Failed to refresh collector state: \(OpenbirdLog.errorDescription(error), privacy: .public)")
             errorMessage = error.localizedDescription
@@ -1180,14 +1200,19 @@ final class AppModel: ObservableObject {
     }
 
     func generateTodayJournal() {
+        cancelAutomaticJournalGeneration()
+        startJournalGeneration(for: selectedDay, isAutomatic: false)
+    }
+
+    private func startJournalGeneration(for requestedDay: Date, isAutomatic: Bool) {
         guard isGeneratingTodayJournal == false else {
             return
         }
 
         isGeneratingTodayJournal = true
-        let requestedDay = selectedDay
         let requestedDayString = OpenbirdDateFormatting.dayString(for: requestedDay)
-        logger.notice("Generating journal for \(requestedDayString, privacy: .public)")
+        let generationMode = isAutomatic ? "Automatically generating" : "Generating"
+        logger.notice("\(generationMode, privacy: .public) journal for \(requestedDayString, privacy: .public)")
         Task {
             defer { isGeneratingTodayJournal = false }
             do {
@@ -1196,10 +1221,18 @@ final class AppModel: ObservableObject {
                     return
                 }
                 todayJournal = journal
-                logger.notice("Generated journal for \(requestedDayString, privacy: .public)")
+                lastAutomaticSelectedDayRefreshAt = Date()
+                scheduleAutomaticJournalGenerationIfNeeded()
+                let completionMode = isAutomatic ? "Automatically generated" : "Generated"
+                logger.notice("\(completionMode, privacy: .public) journal for \(requestedDayString, privacy: .public)")
+            } catch is CancellationError {
+                return
             } catch {
-                logger.error("Failed to generate journal for \(requestedDayString, privacy: .public): \(OpenbirdLog.errorDescription(error), privacy: .public)")
-                errorMessage = error.localizedDescription
+                let failureMode = isAutomatic ? "automatically generate" : "generate"
+                logger.error("Failed to \(failureMode, privacy: .public) journal for \(requestedDayString, privacy: .public): \(OpenbirdLog.errorDescription(error), privacy: .public)")
+                if isAutomatic == false {
+                    errorMessage = error.localizedDescription
+                }
             }
         }
     }
@@ -1259,6 +1292,7 @@ final class AppModel: ObservableObject {
             return
         }
 
+        cancelAutomaticJournalGeneration()
         selectedDay = normalizedDay
         Task {
             await refresh()
@@ -1294,6 +1328,106 @@ final class AppModel: ObservableObject {
                 providerID: settings.activeProviderID
             )
         )
+    }
+
+    private func refreshSelectedDayContentIfNeeded(now: Date = Date()) async {
+        guard isBusy == false else {
+            return
+        }
+
+        guard Calendar.current.isDate(selectedDay, inSameDayAs: now) else {
+            cancelAutomaticJournalGeneration()
+            return
+        }
+
+        if let lastAutomaticSelectedDayRefreshAt,
+           now.timeIntervalSince(lastAutomaticSelectedDayRefreshAt) < Self.automaticSelectedDayRefreshInterval {
+            return
+        }
+
+        let requestedDay = selectedDay
+        let requestedDayString = OpenbirdDateFormatting.dayString(for: requestedDay)
+        let dayRange = Calendar.current.dayRange(for: requestedDay)
+        lastAutomaticSelectedDayRefreshAt = now
+
+        do {
+            let loadedRawEvents = try await store.loadActivityEvents(in: dayRange, includeExcluded: true)
+            let loadedJournal = try await store.loadJournal(for: requestedDayString)
+
+            guard OpenbirdDateFormatting.dayString(for: selectedDay) == requestedDayString else {
+                return
+            }
+
+            if rawEvents != loadedRawEvents {
+                rawEvents = loadedRawEvents
+            }
+            if todayJournal != loadedJournal {
+                todayJournal = loadedJournal
+            }
+
+            scheduleAutomaticJournalGenerationIfNeeded()
+        } catch {
+            logger.error("Failed to refresh selected day content for \(requestedDayString, privacy: .public): \(OpenbirdLog.errorDescription(error), privacy: .public)")
+        }
+    }
+
+    private func scheduleAutomaticJournalGenerationIfNeeded() {
+        guard isShuttingDown == false else {
+            return
+        }
+        guard Calendar.current.isDate(selectedDay, inSameDayAs: Date()) else {
+            cancelAutomaticJournalGeneration()
+            return
+        }
+        guard isGeneratingTodayJournal == false else {
+            return
+        }
+        guard let journal = todayJournal else {
+            cancelAutomaticJournalGeneration()
+            return
+        }
+        guard Self.uncompiledActivityEvents(from: rawEvents, comparedTo: journal).isEmpty == false else {
+            cancelAutomaticJournalGeneration()
+            return
+        }
+        guard automaticJournalGenerationTask == nil else {
+            return
+        }
+
+        let requestedDay = selectedDay
+        automaticJournalGenerationTask = Task { [weak self] in
+            do {
+                try await Task.sleep(for: Self.automaticJournalGenerationDelay)
+            } catch {
+                return
+            }
+
+            await self?.runAutomaticJournalGenerationIfNeeded(for: requestedDay)
+        }
+    }
+
+    private func runAutomaticJournalGenerationIfNeeded(for requestedDay: Date) async {
+        automaticJournalGenerationTask = nil
+
+        guard isShuttingDown == false else {
+            return
+        }
+        guard Calendar.current.isDate(selectedDay, inSameDayAs: requestedDay),
+              Calendar.current.isDate(requestedDay, inSameDayAs: Date()),
+              let journal = todayJournal
+        else {
+            return
+        }
+        guard Self.uncompiledActivityEvents(from: rawEvents, comparedTo: journal).isEmpty == false else {
+            return
+        }
+
+        startJournalGeneration(for: requestedDay, isAutomatic: true)
+    }
+
+    private func cancelAutomaticJournalGeneration() {
+        automaticJournalGenerationTask?.cancel()
+        automaticJournalGenerationTask = nil
     }
 
     private func clearTransientChatState() {

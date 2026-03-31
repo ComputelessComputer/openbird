@@ -404,7 +404,7 @@ struct TodayView: View {
             timelinePreparationStatus = .buildingRecentActivity
             recentItems = await Task.detached(priority: .userInitiated) {
                 Self.buildTimelineItems(
-                    rawEvents: rawEvents.filter { $0.endedAt > journal.updatedAt },
+                    rawEvents: parsedJournal.uncompiledRawEvents,
                     installedApplications: installedApplications
                 )
             }.value
@@ -430,14 +430,14 @@ struct TodayView: View {
     ) -> ParsedJournalContent {
         let document = JournalMarkdownParser.parse(journal.markdown)
         let hasSummaryContent = document.leadingBlocks.isEmpty == false || document.sections.isEmpty == false
-        let hasNewerActivity = hasSummaryContent && rawEvents.contains {
-            $0.isExcluded == false && $0.endedAt.timeIntervalSince(journal.updatedAt) > 10 * 60
-        }
+        let uncompiledRawEvents = hasSummaryContent
+            ? AppModel.uncompiledActivityEvents(from: rawEvents, comparedTo: journal)
+            : []
 
         return ParsedJournalContent(
             document: document,
             hasSummaryContent: hasSummaryContent,
-            hasNewerActivity: hasNewerActivity
+            uncompiledRawEvents: uncompiledRawEvents
         )
     }
 
@@ -504,7 +504,11 @@ private struct LoadingDisplayStatus: Equatable {
 private struct ParsedJournalContent: Sendable {
     let document: JournalMarkdownDocument
     let hasSummaryContent: Bool
-    let hasNewerActivity: Bool
+    let uncompiledRawEvents: [ActivityEvent]
+
+    var hasNewerActivity: Bool {
+        uncompiledRawEvents.isEmpty == false
+    }
 }
 
 private enum TimelinePreparationStatus {
