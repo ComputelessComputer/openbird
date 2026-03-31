@@ -67,9 +67,8 @@ actor AppUpdater {
         process.standardError = outputPipe
 
         try process.run()
-        process.waitUntilExit()
-
         let outputData = outputPipe.fileHandleForReading.readDataToEndOfFile()
+        process.waitUntilExit()
         guard process.terminationStatus == 0 else {
             throw AppUpdaterError.diskImageMountFailed
         }

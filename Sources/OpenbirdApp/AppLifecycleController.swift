@@ -4,15 +4,17 @@ import OpenbirdKit
 
 @MainActor
 final class AppLifecycleController: NSObject, NSApplicationDelegate {
+    private static let terminationPreparationTimeout: Duration = .seconds(5)
+
     private let logger = OpenbirdLog.lifecycle
     private var openMainWindow: () -> Void = {}
-    private var prepareForTermination: () async -> Void = {}
+    private var prepareForTermination: @MainActor @Sendable () async -> Void = {}
     private var allowsFullTermination = false
     private var isHandlingTermination = false
 
     func configure(
         openMainWindow: @escaping () -> Void,
-        prepareForTermination: @escaping () async -> Void
+        prepareForTermination: @escaping @MainActor @Sendable () async -> Void
     ) {
         self.openMainWindow = openMainWindow
         self.prepareForTermination = prepareForTermination
@@ -52,10 +54,17 @@ final class AppLifecycleController: NSObject, NSApplicationDelegate {
         logger.notice("Preparing for application termination")
         Task { [weak self] in
             guard let self else { return }
-            await prepareForTermination()
+            let didFinishPreparation = await Self.waitForTerminationPreparation(
+                timeout: Self.terminationPreparationTimeout,
+                operation: prepareForTermination
+            )
             await MainActor.run {
                 isHandlingTermination = false
-                logger.notice("Application termination cleanup finished")
+                if didFinishPreparation {
+                    logger.notice("Application termination cleanup finished")
+                } else {
+                    logger.error("Application termination cleanup timed out; quitting anyway")
+                }
                 sender.reply(toApplicationShouldTerminate: true)
             }
         }
@@ -69,6 +78,36 @@ final class AppLifecycleController: NSObject, NSApplicationDelegate {
 
         logger.notice("Reopening application without visible windows")
         openApp()
+        return true
+    }
+
+    static func waitForTerminationPreparation(
+        timeout: Duration,
+        operation: @escaping @MainActor @Sendable () async -> Void
+    ) async -> Bool {
+        let results = AsyncStream<Bool> { continuation in
+            let preparationTask = Task { @MainActor in
+                await operation()
+                continuation.yield(true)
+                continuation.finish()
+            }
+            let timeoutTask = Task {
+                try? await Task.sleep(for: timeout)
+                preparationTask.cancel()
+                continuation.yield(false)
+                continuation.finish()
+            }
+
+            continuation.onTermination = { _ in
+                preparationTask.cancel()
+                timeoutTask.cancel()
+            }
+        }
+
+        for await result in results {
+            return result
+        }
+
         return true
     }
 }
