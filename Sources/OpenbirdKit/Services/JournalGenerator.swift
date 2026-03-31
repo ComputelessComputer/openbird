@@ -172,6 +172,9 @@ public actor JournalGenerator {
 
     private func sectionPrompt(_ section: PreparedSection) -> String {
         let appList = Array(section.groupedEvents.map(\.appName).deduplicatedByNormalizedText())
+        let guidance = sectionInterpretationGuidance(for: section)
+            .map { "- \($0)" }
+            .joined(separator: "\n")
 
         return """
         Raw evidence chunk
@@ -179,12 +182,29 @@ public actor JournalGenerator {
         Raw label candidate (do not copy blindly): \(section.heading)
         Apps involved: \(naturalLanguageList(appList))
         Interpretation guidance:
-        - Describe what the user was trying to do, decide, compare, write, debug, or follow up on.
-        - Do not use a bare tool, site, repo, or channel name as the heading when a task-level description is possible.
-        - This chunk can be merged with adjacent chunks if they belong to the same broader activity.
+        \(guidance)
         Evidence:
         \(promptEvidence(for: section))
         """
+    }
+
+    private func sectionInterpretationGuidance(for section: PreparedSection) -> [String] {
+        var guidance = [
+            "Describe what the user was trying to do, decide, compare, write, debug, or follow up on.",
+            "Do not use a bare tool, site, repo, or channel name as the heading when a task-level description is possible.",
+            "This chunk can be merged with adjacent chunks if they belong to the same broader activity.",
+        ]
+
+        if dominantCategory(for: section) == .communication {
+            guidance.append(
+                "For chat or messaging evidence, participant or thread titles identify the conversation context, not automatically the speaker of each nearby message snippet."
+            )
+            guidance.append(
+                "If the excerpt does not explicitly identify who said a message, describe it as something discussed or coordinated rather than attributing it to a named person."
+            )
+        }
+
+        return guidance
     }
 
     private func promptEvidence(for section: PreparedSection) -> String {
@@ -268,13 +288,18 @@ public actor JournalGenerator {
     }
 
     private func eventPrompt(_ event: GroupedActivityEvent) -> String {
+        let isCommunicationEvent = communicationAppLabels.contains(event.appName.normalizedComparisonKey)
         var pieces = [
             "\(OpenbirdDateFormatting.timeString(for: event.startedAt))-\(OpenbirdDateFormatting.timeString(for: event.endedAt))",
             event.appName,
         ]
 
         if let detailTitle = event.detailTitle {
-            pieces.append(detailTitle)
+            if isCommunicationEvent {
+                pieces.append("context: \(detailTitle)")
+            } else {
+                pieces.append(detailTitle)
+            }
         }
 
         if let urlSummary = ActivityEvidencePreprocessor.summarizedURL(from: event.url) {
@@ -282,7 +307,11 @@ public actor JournalGenerator {
         }
 
         if event.excerpt.isEmpty == false {
-            pieces.append(event.excerpt)
+            if isCommunicationEvent {
+                pieces.append("message cues (speaker may be unclear): \(event.excerpt)")
+            } else {
+                pieces.append(event.excerpt)
+            }
         }
 
         if event.sourceEventCount > 1 {
@@ -403,6 +432,10 @@ public actor JournalGenerator {
     }
 
     private func storyHeadingLabel(for section: PreparedSection) -> String {
+        if let directMessageHeading = directMessageHeading(for: section) {
+            return directMessageHeading
+        }
+
         let topic = displayTopic(for: section)
         guard shouldRewriteHeading(topic, section: section),
               let context = bestStoryContext(for: section) else {
@@ -422,6 +455,10 @@ public actor JournalGenerator {
     }
 
     private func storyNarrativeLead(for section: PreparedSection, apps: [String]) -> String? {
+        if let directMessageLead = directMessageNarrativeLead(for: section, apps: apps) {
+            return directMessageLead
+        }
+
         guard shouldRewriteHeading(displayTopic(for: section), section: section),
               let context = bestStoryContext(for: section) else {
             return nil
@@ -451,6 +488,48 @@ public actor JournalGenerator {
         }
 
         return genericToolLabels.contains(normalizedTopic)
+    }
+
+    private func directMessageHeading(for section: PreparedSection) -> String? {
+        guard isDirectMessagingSection(section),
+              let conversationTitle = primaryConversationTitle(for: section) else {
+            return nil
+        }
+
+        return "Chatting with \(conversationTitle)"
+    }
+
+    private func directMessageNarrativeLead(for section: PreparedSection, apps: [String]) -> String? {
+        guard isDirectMessagingSection(section),
+              let conversationTitle = primaryConversationTitle(for: section),
+              let appName = apps.first else {
+            return nil
+        }
+
+        return "You were chatting with \(conversationTitle) on \(appName)."
+    }
+
+    private func isDirectMessagingSection(_ section: PreparedSection) -> Bool {
+        let appNames = Set(section.groupedEvents.map { $0.appName.normalizedComparisonKey })
+        return appNames.count == 1 && appNames.isDisjoint(with: directMessagingAppLabels) == false
+    }
+
+    private func primaryConversationTitle(for section: PreparedSection) -> String? {
+        section.groupedEvents
+            .compactMap(\.detailTitle)
+            .map { $0.trimmingCharacters(in: .whitespacesAndNewlines) }
+            .first(where: isUsableConversationTitle)
+    }
+
+    private func isUsableConversationTitle(_ title: String) -> Bool {
+        let normalizedTitle = title.normalizedComparisonKey
+        guard normalizedTitle.isEmpty == false,
+              genericToolLabels.contains(normalizedTitle) == false
+        else {
+            return false
+        }
+
+        return normalizedTitle.replacingOccurrences(of: " ", with: "").allSatisfy(\.isNumber) == false
     }
 
     private func bestStoryContext(for section: PreparedSection) -> String? {
@@ -592,6 +671,10 @@ public actor JournalGenerator {
 
     private var communicationAppLabels: Set<String> {
         ["slack", "messages", "imessage", "discord", "kakaotalk", "telegram", "whatsapp", "mail", "gmail"]
+    }
+
+    private var directMessagingAppLabels: Set<String> {
+        ["messages", "imessage", "kakaotalk", "telegram", "whatsapp"]
     }
 
     private var developmentAppLabels: Set<String> {

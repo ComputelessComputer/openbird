@@ -366,8 +366,46 @@ struct JournalGeneratorTests {
         #expect(journal.sections.first?.bullets.first?.contains("Enter a message") == false)
         #expect(journal.sections.first?.bullets.first?.contains("Voice Call") == false)
         #expect(journal.markdown.contains("Looked through your context."))
-        #expect(journal.markdown.contains("## Alice"))
+        #expect(journal.markdown.contains("## Chatting with Alice"))
+        #expect(journal.markdown.contains("You were chatting with Alice on KakaoTalk."))
         #expect(journal.markdown.contains("- See you there"))
+    }
+
+    @Test func fallbackMarkdownTreatsDirectMessagesAsConversationContext() async throws {
+        let databaseURL = FileManager.default.temporaryDirectory.appendingPathComponent(UUID().uuidString).appendingPathExtension("sqlite")
+        let store = try OpenbirdStore(databaseURL: databaseURL)
+        let generator = JournalGenerator(store: store)
+
+        let start = Calendar.current.startOfDay(for: Date()).addingTimeInterval(9 * 3600)
+        let events = [
+            ActivityEvent(
+                startedAt: start,
+                endedAt: start.addingTimeInterval(45),
+                bundleId: "com.kakao.KakaoTalkMac",
+                appName: "KakaoTalk",
+                windowTitle: "윤진솔",
+                url: nil,
+                visibleText: "윤진솔 너무 피곤하다 해커톤 끝나고 바로 훠궈 먹었어",
+                source: "accessibility",
+                contentHash: "dm-1",
+                isExcluded: false
+            ),
+        ]
+
+        for event in events {
+            try await store.saveActivityEvent(event)
+        }
+
+        let journal = try await generator.generate(
+            request: JournalGenerationRequest(
+                date: start,
+                providerID: nil
+            )
+        )
+
+        #expect(journal.markdown.contains("## Chatting with 윤진솔"))
+        #expect(journal.markdown.contains("You were chatting with 윤진솔 on KakaoTalk."))
+        #expect(journal.markdown.contains("## 윤진솔") == false)
     }
 
     @Test func compactsAcrossWholeDayWhenSourceEventsAreCapped() async throws {
