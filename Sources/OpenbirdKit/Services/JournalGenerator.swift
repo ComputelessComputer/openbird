@@ -202,6 +202,9 @@ public actor JournalGenerator {
             guidance.append(
                 "If the excerpt does not explicitly identify who said a message, describe it as something discussed or coordinated rather than attributing it to a named person."
             )
+            guidance.append(
+                "If message cues are prefixed with `Me:` or `Them:`, preserve that attribution."
+            )
         }
 
         return guidance

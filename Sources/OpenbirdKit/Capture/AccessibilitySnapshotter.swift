@@ -26,6 +26,7 @@ struct FrontmostApplicationContext: Sendable {
 
 public struct AccessibilitySnapshotter: Sendable {
     private let snapshotSanitizer = SnapshotSanitizer()
+    private let kakaoTalkBundleID = "com.kakao.KakaoTalkMac"
 
     public init() {}
 
@@ -55,11 +56,15 @@ public struct AccessibilitySnapshotter: Sendable {
         let url = stringAttribute("AXURL", on: focusedWindow)
         let visibleText: String
         if includeVisibleText {
-            let windowText = collectVisibleText(from: focusedWindow, depth: 0, remainingNodes: 220, remainingCharacters: 4000)
-            let focusedElementText = copyElementAttribute(axApplication, attribute: kAXFocusedUIElementAttribute)
-                .map { collectVisibleText(from: $0, depth: 0, remainingNodes: 60, remainingCharacters: 1200) }
-                ?? ""
-            visibleText = mergeTextFragments([windowText, focusedElementText])
+            if application.bundleID == kakaoTalkBundleID {
+                visibleText = collectKakaoTalkVisibleText(from: focusedWindow, application: axApplication)
+            } else {
+                let windowText = collectVisibleText(from: focusedWindow, depth: 0, remainingNodes: 220, remainingCharacters: 4000)
+                let focusedElementText = copyElementAttribute(axApplication, attribute: kAXFocusedUIElementAttribute)
+                    .map { collectVisibleText(from: $0, depth: 0, remainingNodes: 60, remainingCharacters: 1200) }
+                    ?? ""
+                visibleText = mergeTextFragments([windowText, focusedElementText])
+            }
         } else {
             visibleText = ""
         }
@@ -163,6 +168,83 @@ public struct AccessibilitySnapshotter: Sendable {
         return String(merged.prefix(remainingCharacters))
     }
 
+    private func collectKakaoTalkVisibleText(from focusedWindow: AXUIElement, application: AXUIElement) -> String {
+        let windowFrame = frame(of: focusedWindow)
+        let windowFragments = collectTextFragments(
+            from: focusedWindow,
+            depth: 0,
+            remainingNodes: 220,
+            remainingCharacters: 4000
+        )
+        let focusedFragments = copyElementAttribute(application, attribute: kAXFocusedUIElementAttribute)
+            .map {
+                collectTextFragments(
+                    from: $0,
+                    depth: 0,
+                    remainingNodes: 60,
+                    remainingCharacters: 1200
+                )
+            } ?? []
+
+        return mergeKakaoTalkFragments(windowFragments + focusedFragments, windowFrame: windowFrame)
+    }
+
+    private func collectTextFragments(
+        from element: AXUIElement,
+        depth: Int,
+        remainingNodes: Int,
+        remainingCharacters: Int
+    ) -> [TextFragment] {
+        guard depth < 9, remainingNodes > 0, remainingCharacters > 0 else { return [] }
+
+        let role = stringAttribute(kAXRoleAttribute, on: element) ?? ""
+        if role.localizedCaseInsensitiveContains("secure") {
+            return []
+        }
+
+        var fragments: [TextFragment] = []
+        let elementFrame = frame(of: element)
+        if shouldCollectText(for: role) {
+            let candidateAttributes = [
+                kAXValueAttribute,
+                kAXDescriptionAttribute,
+                kAXTitleAttribute,
+                kAXSelectedTextAttribute,
+            ]
+
+            for attribute in candidateAttributes {
+                guard let text = stringAttribute(attribute, on: element)?.trimmingCharacters(in: .whitespacesAndNewlines),
+                      text.isEmpty == false,
+                      text.count < 400
+                else { continue }
+                fragments.append(
+                    TextFragment(
+                        text: text,
+                        frame: elementFrame
+                    )
+                )
+            }
+        }
+
+        let children = prioritizedChildren(for: element)
+        let childCount = max(children.count, 1)
+        let preferredChildCount = min(12, childCount)
+        let childBudget = max(4, remainingNodes / preferredChildCount)
+        let charBudget = max(160, remainingCharacters / preferredChildCount)
+        for child in children.prefix(min(preferredChildCount, remainingNodes)) {
+            fragments.append(
+                contentsOf: collectTextFragments(
+                    from: child,
+                    depth: depth + 1,
+                    remainingNodes: childBudget,
+                    remainingCharacters: charBudget
+                )
+            )
+        }
+
+        return fragments
+    }
+
     private func mergeTextFragments(_ fragments: [String]) -> String {
         fragments
             .joined(separator: "\n")
@@ -171,6 +253,45 @@ public struct AccessibilitySnapshotter: Sendable {
             .filter { $0.isEmpty == false }
             .removingDuplicates()
             .joined(separator: "\n")
+    }
+
+    private func mergeKakaoTalkFragments(_ fragments: [TextFragment], windowFrame: CGRect?) -> String {
+        fragments
+            .map { fragment in
+                AnnotatedTextLine(
+                    text: fragment.text,
+                    speaker: kakaoTalkSpeaker(for: fragment.frame, in: windowFrame),
+                    frame: fragment.frame
+                )
+            }
+            .sorted()
+            .filter { $0.text.isEmpty == false }
+            .deduplicatedByNormalizedText()
+            .map(\.displayText)
+            .joined(separator: "\n")
+    }
+
+    private func kakaoTalkSpeaker(for frame: CGRect?, in windowFrame: CGRect?) -> KakaoTalkSpeaker {
+        guard let frame, let windowFrame, windowFrame.width > 0 else {
+            return .unknown
+        }
+
+        let leadingInset = frame.minX - windowFrame.minX
+        let trailingInset = windowFrame.maxX - frame.maxX
+
+        if frame.width < 24 {
+            return .unknown
+        }
+
+        if trailingInset < windowFrame.width * 0.16 && leadingInset > windowFrame.width * 0.42 {
+            return .me
+        }
+
+        if leadingInset < windowFrame.width * 0.22 && trailingInset > windowFrame.width * 0.26 {
+            return .them
+        }
+
+        return .unknown
     }
 
     private func copyElementAttribute(_ element: AXUIElement, attribute: String) -> AXUIElement? {
@@ -241,6 +362,50 @@ public struct AccessibilitySnapshotter: Sendable {
         return value as? Bool
     }
 
+    private func frame(of element: AXUIElement) -> CGRect? {
+        guard let origin = pointAttribute(kAXPositionAttribute, on: element),
+              let size = sizeAttribute(kAXSizeAttribute, on: element)
+        else {
+            return nil
+        }
+
+        return CGRect(origin: origin, size: size)
+    }
+
+    private func pointAttribute(_ attribute: String, on element: AXUIElement) -> CGPoint? {
+        var value: CFTypeRef?
+        let result = AXUIElementCopyAttributeValue(element, attribute as CFString, &value)
+        guard result == .success,
+              let axValue = value,
+              AXValueGetType(axValue as! AXValue) == .cgPoint
+        else {
+            return nil
+        }
+
+        var point = CGPoint.zero
+        guard AXValueGetValue(axValue as! AXValue, .cgPoint, &point) else {
+            return nil
+        }
+        return point
+    }
+
+    private func sizeAttribute(_ attribute: String, on element: AXUIElement) -> CGSize? {
+        var value: CFTypeRef?
+        let result = AXUIElementCopyAttributeValue(element, attribute as CFString, &value)
+        guard result == .success,
+              let axValue = value,
+              AXValueGetType(axValue as! AXValue) == .cgSize
+        else {
+            return nil
+        }
+
+        var size = CGSize.zero
+        guard AXValueGetValue(axValue as! AXValue, .cgSize, &size) else {
+            return nil
+        }
+        return size
+    }
+
     private func shouldCollectText(for role: String) -> Bool {
         blockedRoles.contains(role) == false
     }
@@ -263,6 +428,57 @@ public struct AccessibilitySnapshotter: Sendable {
 
 }
 
+private struct TextFragment {
+    let text: String
+    let frame: CGRect?
+}
+
+private enum KakaoTalkSpeaker {
+    case me
+    case them
+    case unknown
+
+    var prefix: String? {
+        switch self {
+        case .me:
+            return "Me: "
+        case .them:
+            return "Them: "
+        case .unknown:
+            return nil
+        }
+    }
+}
+
+private struct AnnotatedTextLine: Comparable {
+    let text: String
+    let speaker: KakaoTalkSpeaker
+    let frame: CGRect?
+
+    var displayText: String {
+        if let prefix = speaker.prefix {
+            return prefix + text
+        }
+        return text
+    }
+
+    static func < (lhs: AnnotatedTextLine, rhs: AnnotatedTextLine) -> Bool {
+        let lhsY = lhs.frame?.minY ?? .greatestFiniteMagnitude
+        let rhsY = rhs.frame?.minY ?? .greatestFiniteMagnitude
+        if abs(lhsY - rhsY) > 6 {
+            return lhsY < rhsY
+        }
+
+        let lhsX = lhs.frame?.minX ?? .greatestFiniteMagnitude
+        let rhsX = rhs.frame?.minX ?? .greatestFiniteMagnitude
+        if lhsX != rhsX {
+            return lhsX < rhsX
+        }
+
+        return lhs.displayText < rhs.displayText
+    }
+}
+
 private struct PrioritizedChild {
     let element: AXUIElement
     let priority: Int
@@ -273,6 +489,24 @@ private extension Array where Element: Hashable {
     func removingDuplicates() -> [Element] {
         var seen = Set<Element>()
         return filter { seen.insert($0).inserted }
+    }
+}
+
+private extension Array where Element == AnnotatedTextLine {
+    func deduplicatedByNormalizedText() -> [AnnotatedTextLine] {
+        var seen = Set<String>()
+        return filter { line in
+            seen.insert(line.displayText.normalizedComparisonKey).inserted
+        }
+    }
+}
+
+private extension String {
+    var normalizedComparisonKey: String {
+        lowercased()
+            .components(separatedBy: CharacterSet.alphanumerics.inverted)
+            .filter { $0.isEmpty == false }
+            .joined(separator: " ")
     }
 }
 

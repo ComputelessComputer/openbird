@@ -54,7 +54,7 @@ struct SnapshotSanitizer {
             bundleId: bundleId,
             title: currentTitle
         )
-        return lines.first ?? currentTitle
+        return lines.first.map { strippingSpeakerMarker(from: $0) } ?? currentTitle
     }
 
     private func normalizedVisibleText(_ visibleText: String, appName: String, bundleId: String, title: String) -> String {
@@ -66,7 +66,7 @@ struct SnapshotSanitizer {
         visibleText
             .components(separatedBy: .newlines)
             .map { $0.trimmingCharacters(in: .whitespacesAndNewlines) }
-            .map { normalizedWindowTitle($0, bundleId: bundleId) }
+            .map { normalizedLine($0, bundleId: bundleId) }
             .map { cleanedLine($0, bundleId: bundleId) }
             .filter { $0.isEmpty == false }
             .filter { isDuplicateLine($0, title: title, appName: appName, bundleId: bundleId) == false }
@@ -77,26 +77,49 @@ struct SnapshotSanitizer {
     private func cleanedLine(_ line: String, bundleId: String) -> String {
         let trimmed = line.trimmingCharacters(in: .whitespacesAndNewlines)
         guard trimmed.isEmpty == false else { return "" }
+        let speakerMarker = speakerMarker(in: trimmed)
+        let content = strippingSpeakerMarker(from: trimmed)
+        guard content.isEmpty == false else { return "" }
 
         if browserBundleIDs.contains(bundleId) {
-            if browserChromeFragments.filter({ trimmed.normalizedComparisonKey.contains($0) }).count >= 2 {
+            if browserChromeFragments.filter({ content.normalizedComparisonKey.contains($0) }).count >= 2 {
                 return ""
             }
         }
 
         if bundleId == "com.kakao.KakaoTalkMac" {
-            if kakaoTalkChromeFragments.filter({ trimmed.normalizedComparisonKey.contains($0) }).count >= 2 {
+            if kakaoTalkChromeFragments.filter({ content.normalizedComparisonKey.contains($0) }).count >= 2 {
                 return ""
             }
         }
 
         if bundleId == "com.tinyspeck.slackmacgap" {
-            if slackChromeFragments.filter({ trimmed.normalizedComparisonKey.contains($0) }).count >= 2 {
+            if slackChromeFragments.filter({ content.normalizedComparisonKey.contains($0) }).count >= 2 {
                 return ""
             }
         }
 
-        return trimmed
+        guard let speakerMarker else {
+            return content
+        }
+
+        return speakerMarker + content
+    }
+
+    private func normalizedLine(_ line: String, bundleId: String) -> String {
+        let trimmed = line.trimmingCharacters(in: .whitespacesAndNewlines)
+        guard trimmed.isEmpty == false else { return "" }
+
+        let speakerMarker = speakerMarker(in: trimmed)
+        let content = strippingSpeakerMarker(from: trimmed)
+        let normalizedContent = normalizedWindowTitle(content, bundleId: bundleId)
+        guard normalizedContent.isEmpty == false else { return "" }
+
+        guard let speakerMarker else {
+            return normalizedContent
+        }
+
+        return speakerMarker + normalizedContent
     }
 
     private func normalizedSlackTitle(_ title: String) -> String {
@@ -149,17 +172,18 @@ struct SnapshotSanitizer {
     }
 
     private func isDuplicateLine(_ line: String, title: String, appName: String, bundleId: String) -> Bool {
-        let normalized = line.normalizedComparisonKey
+        let content = strippingSpeakerMarker(from: line)
+        let normalized = content.normalizedComparisonKey
         guard normalized.isEmpty == false else { return true }
 
-        let normalizedLineTitle = normalizedWindowTitle(line, bundleId: bundleId).normalizedComparisonKey
+        let normalizedLineTitle = normalizedWindowTitle(content, bundleId: bundleId).normalizedComparisonKey
         return normalized == title.normalizedComparisonKey
             || normalizedLineTitle == title.normalizedComparisonKey
             || normalized == appName.normalizedComparisonKey
     }
 
     private func isLowSignalLine(_ line: String, bundleId: String) -> Bool {
-        let normalized = line.normalizedComparisonKey
+        let normalized = strippingSpeakerMarker(from: line).normalizedComparisonKey
         guard normalized.isEmpty == false else { return true }
 
         let boilerplate = Set([
@@ -224,6 +248,25 @@ struct SnapshotSanitizer {
         }
 
         return false
+    }
+
+    private func speakerMarker(in line: String) -> String? {
+        if line.hasPrefix("Me: ") {
+            return "Me: "
+        }
+        if line.hasPrefix("Them: ") {
+            return "Them: "
+        }
+        return nil
+    }
+
+    private func strippingSpeakerMarker(from line: String) -> String {
+        guard let speakerMarker = speakerMarker(in: line) else {
+            return line.trimmingCharacters(in: .whitespacesAndNewlines)
+        }
+
+        return String(line.dropFirst(speakerMarker.count))
+            .trimmingCharacters(in: .whitespacesAndNewlines)
     }
 
     private func isTimeLikeLine(_ normalized: String) -> Bool {

@@ -179,6 +179,37 @@ struct SnapshotSanitizerTests {
         #expect(sanitized.visibleText == "ㅋㅋㅋㅋ 먼지가 없긴 해요")
     }
 
+    @Test func preservesKakaoTalkSpeakerMarkersWhenAvailable() {
+        let sanitizer = SnapshotSanitizer()
+        let snapshot = WindowSnapshot(
+            bundleId: "com.kakao.KakaoTalkMac",
+            appName: "KakaoTalk",
+            windowTitle: "KakaoTalk",
+            url: nil,
+            visibleText: """
+            Them: 윤진솔.
+            Them: youtu.be
+            Them: 이거알지!!
+            Me: 좋은 노래다
+            Me: 난 근데 라우브가 파멸적인데
+            Me: 1
+            9:15 AM
+            Me: 이거 진짜..
+            Enter a message
+            """,
+            source: "accessibility"
+        )
+
+        let sanitized = sanitizer.sanitize(snapshot)
+
+        #expect(sanitized.windowTitle == "윤진솔.")
+        #expect(sanitized.visibleText.contains("Them: 이거알지!!"))
+        #expect(sanitized.visibleText.contains("Me: 좋은 노래다"))
+        #expect(sanitized.visibleText.contains("Me: 이거 진짜.."))
+        #expect(sanitized.visibleText.contains("Me: 1") == false)
+        #expect(sanitized.visibleText.contains("Enter a message") == false)
+    }
+
     @Test func fallsBackToMeaningfulVisibleTextWhenWindowTitleIsMissing() {
         let sanitizer = SnapshotSanitizer()
         let snapshot = WindowSnapshot(
