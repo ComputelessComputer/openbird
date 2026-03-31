@@ -36,5 +36,9 @@ let package = Package(
             name: "OpenbirdKitTests",
             dependencies: ["OpenbirdKit"]
         ),
+        .testTarget(
+            name: "OpenbirdAppTests",
+            dependencies: ["OpenbirdApp"]
+        ),
     ]
 )

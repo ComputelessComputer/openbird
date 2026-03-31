@@ -62,7 +62,7 @@ final class AppModel: ObservableObject {
     @Published var installedApplications: [InstalledApplication] = []
     @Published var availableUpdate: AppUpdate?
     @Published var editingProvider = ProviderConfig.defaultOllama
-    @Published var selectedDay = Date()
+    @Published var selectedDay: Date
     @Published var todayJournal: DailyJournal?
     @Published var rawEvents: [ActivityEvent] = []
     @Published var chatThread: ChatThread?
@@ -107,6 +107,7 @@ final class AppModel: ObservableObject {
     private var chatSendTask: Task<Void, Never>?
     private var providerConnectionRequestID = UUID()
     private var updateCheckRequestID = UUID()
+    private var currentDayAnchor: Date
     private var isShuttingDown = false
     private let logger = OpenbirdLog.app
 
@@ -115,6 +116,9 @@ final class AppModel: ObservableObject {
         updateService: UpdateService = UpdateService(),
         appUpdater: AppUpdater = AppUpdater()
     ) {
+        let currentDay = Self.startOfDay(for: Date())
+        self.selectedDay = currentDay
+        self.currentDayAnchor = currentDay
         self.userDefaults = userDefaults
         self.updateService = updateService
         self.appUpdater = appUpdater
@@ -392,6 +396,22 @@ final class AppModel: ObservableObject {
         return version
     }
 
+    nonisolated static func autoAdvancedSelectedDay(
+        from selectedDay: Date,
+        previousCurrentDay: Date,
+        now: Date,
+        calendar: Calendar = .current
+    ) -> Date? {
+        let currentDay = calendar.startOfDay(for: now)
+        guard calendar.isDate(currentDay, inSameDayAs: previousCurrentDay) == false else {
+            return nil
+        }
+        guard calendar.isDate(selectedDay, inSameDayAs: previousCurrentDay) else {
+            return nil
+        }
+        return currentDay
+    }
+
     func prepareForTermination() async {
         guard isShuttingDown == false else {
             return
@@ -537,6 +557,7 @@ final class AppModel: ObservableObject {
     }
 
     func handleAppDidBecomeActive() {
+        handleCurrentDayChangeIfNeeded()
         refreshAccessibilityPermissionState()
     }
 
@@ -614,6 +635,7 @@ final class AppModel: ObservableObject {
     }
 
     func refreshCollectorState() async {
+        handleCurrentDayChangeIfNeeded()
         do {
             settings = try await loadCurrentSettings()
         } catch {
@@ -1232,10 +1254,37 @@ final class AppModel: ObservableObject {
     }
 
     func selectDay(_ day: Date) {
-        selectedDay = day
+        let normalizedDay = Self.startOfDay(for: day)
+        guard Calendar.current.isDate(selectedDay, inSameDayAs: normalizedDay) == false else {
+            return
+        }
+
+        selectedDay = normalizedDay
         Task {
             await refresh()
         }
+    }
+
+    func handleCurrentDayChangeIfNeeded(now: Date = Date()) {
+        let calendar = Calendar.current
+        let currentDay = Self.startOfDay(for: now, calendar: calendar)
+        guard calendar.isDate(currentDay, inSameDayAs: currentDayAnchor) == false else {
+            return
+        }
+
+        let autoSelectedDay = Self.autoAdvancedSelectedDay(
+            from: selectedDay,
+            previousCurrentDay: currentDayAnchor,
+            now: now,
+            calendar: calendar
+        )
+        currentDayAnchor = currentDay
+
+        guard let autoSelectedDay else {
+            return
+        }
+
+        selectDay(autoSelectedDay)
     }
 
     private func generateJournal(for day: Date) async throws -> DailyJournal {
@@ -1251,6 +1300,10 @@ final class AppModel: ObservableObject {
         isSendingChat = false
         pendingUserChatMessage = nil
         pendingAssistantReply = nil
+    }
+
+    nonisolated private static func startOfDay(for date: Date, calendar: Calendar = .current) -> Date {
+        calendar.startOfDay(for: date)
     }
 
     private func streamAssistantReply(_ message: ChatMessage, threadID: String) async {
