@@ -255,7 +255,7 @@ private struct ChatComposer: View {
     }
 
     var body: some View {
-        ZStack(alignment: .bottomTrailing) {
+        ZStack(alignment: .leading) {
             TextField("", text: $model.chatInput, axis: .vertical)
                 .textFieldStyle(.plain)
                 .font(.body)
@@ -269,25 +269,7 @@ private struct ChatComposer: View {
                 .padding(.leading, 18)
                 .padding(.trailing, 64)
                 .padding(.vertical, 16)
-                .background(
-                    RoundedRectangle(cornerRadius: 24, style: .continuous)
-                        .fill(.regularMaterial)
-                        .shadow(color: Color.black.opacity(0.14), radius: 24, y: 14)
-                        .shadow(color: Color.black.opacity(0.06), radius: 8, y: 3)
-                )
-                .overlay(
-                    RoundedRectangle(cornerRadius: 24, style: .continuous)
-                        .strokeBorder(
-                            LinearGradient(
-                                colors: [
-                                    Color.white.opacity(0.62),
-                                    Color.white.opacity(0.18)
-                                ],
-                                startPoint: .topLeading,
-                                endPoint: .bottomTrailing
-                            )
-                        )
-                )
+                .frame(maxWidth: .infinity, alignment: .leading)
 
             if model.chatInput.isEmpty {
                 HStack {
@@ -300,7 +282,28 @@ private struct ChatComposer: View {
                 .padding(.vertical, 16)
                 .allowsHitTesting(false)
             }
-
+        }
+        .frame(maxWidth: .infinity)
+        .background(
+            RoundedRectangle(cornerRadius: 24, style: .continuous)
+                .fill(.regularMaterial)
+                .shadow(color: Color.black.opacity(0.14), radius: 24, y: 14)
+                .shadow(color: Color.black.opacity(0.06), radius: 8, y: 3)
+        )
+        .overlay(
+            RoundedRectangle(cornerRadius: 24, style: .continuous)
+                .strokeBorder(
+                    LinearGradient(
+                        colors: [
+                            Color.white.opacity(0.62),
+                            Color.white.opacity(0.18)
+                        ],
+                        startPoint: .topLeading,
+                        endPoint: .bottomTrailing
+                    )
+                )
+        )
+        .overlay(alignment: .trailing) {
             Button(action: send) {
                 Group {
                     if model.isSendingChat {
@@ -318,7 +321,7 @@ private struct ChatComposer: View {
             .controlSize(.regular)
             .clipShape(Circle())
             .disabled(canSend == false)
-            .padding(10)
+            .padding(.trailing, 10)
         }
         .onChange(of: focusedField.wrappedValue) { _, newValue in
             if newValue == .composer {
