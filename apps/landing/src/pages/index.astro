@@ -4,6 +4,7 @@ import BaseLayout from "../layouts/BaseLayout.astro";
 const releaseUrl = "https://github.com/ComputelessComputer/openbird/releases/latest";
 const sourceUrl = "https://github.com/ComputelessComputer/openbird";
 const latestReleaseApiUrl = "https://api.github.com/repos/ComputelessComputer/openbird/releases/latest";
+const howItWorksUrl = "/how-it-works";
 
 const detailItems = [
   "Local-first by default. No account or backend required.",
@@ -56,6 +57,11 @@ const faqItems = [
     <p>
       Everything stays on your Mac by default. You can inspect the log, pause capture, exclude apps
       and domains, choose your own model, and delete data whenever you want.
+    </p>
+
+    <p>
+      Want the full pipeline? Read <a href={howItWorksUrl}>how Openbird collects data, processes it,
+      and generates the daily summary</a>.
     </p>
 
     <p>
