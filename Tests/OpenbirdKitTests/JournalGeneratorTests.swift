@@ -366,12 +366,12 @@ struct JournalGeneratorTests {
         #expect(journal.sections.first?.bullets.first?.contains("Enter a message") == false)
         #expect(journal.sections.first?.bullets.first?.contains("Voice Call") == false)
         #expect(journal.markdown.contains("Looked through your context."))
-        #expect(journal.markdown.contains("## Chatting with Alice"))
-        #expect(journal.markdown.contains("You were chatting with Alice on KakaoTalk."))
+        #expect(journal.markdown.contains("## Alice"))
+        #expect(journal.markdown.contains("This part of the day centered on Alice in KakaoTalk."))
         #expect(journal.markdown.contains("- See you there"))
     }
 
-    @Test func fallbackMarkdownTreatsDirectMessagesAsConversationContext() async throws {
+    @Test func fallbackMarkdownKeepsDirectMessageTitlesPlain() async throws {
         let databaseURL = FileManager.default.temporaryDirectory.appendingPathComponent(UUID().uuidString).appendingPathExtension("sqlite")
         let store = try OpenbirdStore(databaseURL: databaseURL)
         let generator = JournalGenerator(store: store)
@@ -403,9 +403,9 @@ struct JournalGeneratorTests {
             )
         )
 
-        #expect(journal.markdown.contains("## Chatting with 윤진솔"))
-        #expect(journal.markdown.contains("You were chatting with 윤진솔 on KakaoTalk."))
-        #expect(journal.markdown.contains("## 윤진솔") == false)
+        #expect(journal.markdown.contains("## 윤진솔"))
+        #expect(journal.markdown.contains("This part of the day centered on 윤진솔 in KakaoTalk."))
+        #expect(journal.markdown.contains("## Chatting with 윤진솔") == false)
     }
 
     @Test func compactsAcrossWholeDayWhenSourceEventsAreCapped() async throws {
