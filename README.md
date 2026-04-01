@@ -4,6 +4,8 @@ Openbird is a local-first macOS activity journal.
 
 It watches your current work context through the Accessibility API, stores that context on your Mac, and turns it into a daily review and follow-up chat.
 
+Openbird is also the context layer planned for future integration into [char.com](https://char.com).
+
 It exists because software with this much visibility into your day should not be a black box.
 
 No account is required. No backend is required.
@@ -135,6 +137,8 @@ Openbird is early, but the core loop works:
 - date-scoped chat over your activity history
 
 The current scope is intentionally narrow. Openbird is focused on being a trustworthy personal activity journal first.
+
+The longer-term direction is to bring this work into char.com without giving up the local-first and inspectable privacy model established here.
 
 ## Development
 

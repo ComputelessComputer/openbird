@@ -11,7 +11,7 @@ const detailItems = [
   "Captures the frontmost app, window title, browser URL when available, visible accessibility text, and timestamps.",
   "Intentionally focused on Accessibility API data only. No automatic screenshots, raw key events, clipboard contents, passwords, secure text fields, or hidden windows.",
   "Stores captured data locally at <span class=\"mono\">~/Library/Application Support/Openbird/openbird.sqlite</span> and supports Ollama, LM Studio, and other OpenAI-compatible endpoints.",
-  "Built as a native context primitive that can later be integrated directly into fastrepl/char.",
+  "Built as a native context primitive that is planned for integration directly into char.com.",
   "Built for macOS 14+ on Apple Silicon.",
 ];
 
@@ -19,7 +19,7 @@ const faqItems = [
   {
     question: "What is Openbird for?",
     answer:
-      "Openbird is a small, focused experiment around turning Accessibility API data into usable personal context. The long-term direction is native integration into fastrepl/char.",
+      "Openbird is a small, focused experiment around turning Accessibility API data into usable personal context. The long-term direction is native integration into char.com.",
   },
   {
     question: "What can I do with it today?",
@@ -67,7 +67,7 @@ const faqItems = [
 
     <p>
       The goal is to learn what a trustworthy personal-context layer should look like before this
-      capability is integrated natively into fastrepl/char. Everything stays on your Mac by default,
+      capability is integrated natively into char.com. Everything stays on your Mac by default,
       and you can inspect the log, pause capture, exclude apps and domains, choose your own model,
       and delete data whenever you want.
     </p>
