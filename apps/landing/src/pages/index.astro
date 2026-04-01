@@ -4,7 +4,6 @@ import BaseLayout from "../layouts/BaseLayout.astro";
 const releaseUrl = "https://github.com/ComputelessComputer/openbird/releases/latest";
 const sourceUrl = "https://github.com/ComputelessComputer/openbird";
 const latestReleaseApiUrl = "https://api.github.com/repos/ComputelessComputer/openbird/releases/latest";
-const howItWorksUrl = "/how-it-works";
 
 const detailItems = [
   "Experimental proof of concept for accessibility-first personal context on macOS.",
@@ -25,6 +24,11 @@ const faqItems = [
     question: "What can I do with it today?",
     answer:
       "Today it can generate a daily review, answer follow-up questions about your day, and let you inspect the raw activity log behind both.",
+  },
+  {
+    question: "How does Openbird turn activity into a daily review?",
+    answer:
+      "Read <a href=\"/how-it-works\">how Openbird collects local accessibility context, cleans it up, groups it, and turns it into a daily review</a>.",
   },
   {
     question: "Can I control or delete the data?",
@@ -70,11 +74,6 @@ const faqItems = [
       capability is integrated natively into char.com. Everything stays on your Mac by default,
       and you can inspect the log, pause capture, exclude apps and domains, choose your own model,
       and delete data whenever you want.
-    </p>
-
-    <p>
-      Want the current pipeline? Read <a href={howItWorksUrl}>how Openbird collects accessibility
-      data, processes it, and generates the daily summary</a>.
     </p>
 
     <p>

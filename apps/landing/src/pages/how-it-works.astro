@@ -27,22 +27,23 @@ const generationItems = [
 ---
 
 <BaseLayout
-  title="How Openbird Works | Openbird"
-  description="A plain-English walkthrough of how Openbird collects local accessibility context, prepares it, and generates a daily review."
+  title="How Openbird Processes Your Context | Openbird"
+  description="A plain-English walkthrough of how Openbird collects local accessibility context, cleans it up, groups it, and turns it into a daily review."
 >
   <main class="page">
     <p class="small"><a href="/">Back to home</a></p>
 
     <div class="header">
       <img src="/openbird.png" alt="Openbird bird illustration" class="header-icon" />
-      <h1>How Openbird works</h1>
-      <p>How accessibility context is collected, processed, and turned into the current daily summary.</p>
+      <h1>How Openbird processes your context</h1>
+      <p>How local accessibility activity is collected, cleaned up, grouped, and turned into the current daily review.</p>
     </div>
 
     <p>
-      Openbird&apos;s current summary is built from a local accessibility timeline, not screenshots or
-      a remote backend. The pipeline is straightforward: collect the frontmost context, clean and
-      group it, then generate a recap from those prepared activity chunks.
+      Openbird&apos;s current daily review is built from a local accessibility timeline, not screenshots
+      or a remote backend. The pipeline is straightforward: capture the frontmost context, clean it
+      up, group it into meaningful chunks, then generate a grounded recap from that prepared
+      evidence.
     </p>
 
     <p>
@@ -59,7 +60,7 @@ const generationItems = [
       <li>Generate markdown with your configured model, or fall back to a built-in heuristic recap.</li>
     </ol>
 
-    <h2>1. Data collection</h2>
+    <h2>1. Capture</h2>
 
     <ul>
       {collectionItems.map((item) => (
@@ -72,7 +73,7 @@ const generationItems = [
       <span class="mono"> ~/Library/Application Support/Openbird/openbird.sqlite</span>.
     </p>
 
-    <h2>2. Local processing</h2>
+    <h2>2. Cleanup and grouping</h2>
 
     <ul>
       {processingItems.map((item) => (
@@ -81,11 +82,11 @@ const generationItems = [
     </ul>
 
     <p>
-      This processing step is what makes the summary readable. It reduces tab chrome, repeated
-      labels, and noisy app switches before any generation happens.
+      This cleanup step is what makes the daily review readable. It strips browser and chat chrome,
+      merges repeated context, and reduces noisy app switches before any generation happens.
     </p>
 
-    <h2>3. Summary generation</h2>
+    <h2>3. Review generation</h2>
 
     <ul>
       {generationItems.map((item) => (
@@ -94,7 +95,7 @@ const generationItems = [
     </ul>
 
     <p>
-      The generated summary is meant to read like a grounded recap of your day, not a raw timeline
+      The generated review is meant to read like a grounded recap of your day, not a raw timeline
       dump. Openbird explicitly asks the model to synthesize the evidence into a few human sections
       and keep the output in markdown.
     </p>
