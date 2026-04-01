@@ -160,24 +160,24 @@ struct TodayView: View {
         switch timelineContent {
         case .empty:
             EmptyView()
-        case .journal(let document, let refreshedAt, let recentItems, let timelineItems):
+        case .journal(let document, let refreshedAt, let recentSection, let timelineSection):
             switch activeTimelineMode {
             case .topic:
-                journalTimeline(document: document, refreshedAt: refreshedAt, recentItems: recentItems)
+                journalTimeline(document: document, refreshedAt: refreshedAt, recentSection: recentSection)
             case .timeline:
-                timelineCard(items: timelineItems)
+                timelineCard(section: timelineSection)
             case nil:
                 EmptyView()
             }
-        case .raw(let items):
-            timelineCard(items: items)
+        case .raw(let section):
+            timelineCard(section: section)
         }
     }
 
     private func journalTimeline(
         document: JournalMarkdownDocument,
         refreshedAt: Date,
-        recentItems: [TimelineItem]
+        recentSection: TimelineSection
     ) -> some View {
         VStack(alignment: .leading, spacing: 20) {
             VStack(alignment: .leading, spacing: 0) {
@@ -218,28 +218,26 @@ struct TodayView: View {
             .frame(maxWidth: .infinity, alignment: .leading)
             .background(Color(nsColor: .controlBackgroundColor), in: RoundedRectangle(cornerRadius: 24))
 
-            if recentItems.isEmpty == false {
+            if recentSection.isEmpty == false {
                 VStack(alignment: .leading, spacing: 12) {
                     Text("Recent Activity")
                         .font(.headline)
                     Text("Summary last refreshed at \(OpenbirdDateFormatting.timeString(for: refreshedAt)). Newer captured activity is shown below.")
                         .font(.subheadline)
                         .foregroundStyle(.secondary)
-                    timelineCard(items: recentItems)
+                    timelineCard(section: recentSection)
                 }
             }
         }
     }
 
-    private func timelineCard(items: [TimelineItem]) -> some View {
-        let insights = TimelineInsightBuilder.build(from: items)
-
+    private func timelineCard(section: TimelineSection) -> some View {
         return LazyVStack(alignment: .leading, spacing: 0) {
-            ForEach(insights.indices, id: \.self) { index in
+            ForEach(Array(section.insights.enumerated()), id: \.element.id) { index, insight in
                 if index > 0 {
                     Divider()
                 }
-                timelineInsightRow(insights[index])
+                timelineInsightRow(insight)
                     .padding(24)
             }
         }
@@ -428,8 +426,8 @@ struct TodayView: View {
         let journal = model.todayJournal
         let rawEvents = model.rawEvents
         let installedApplications = model.installedApplications
-        let rawItemsTask = Task.detached(priority: .userInitiated) {
-            Self.buildTimelineItems(
+        let rawSectionTask = Task.detached(priority: .userInitiated) {
+            Self.buildTimelineSection(
                 rawEvents: rawEvents,
                 installedApplications: installedApplications
             )
@@ -443,13 +441,13 @@ struct TodayView: View {
         }
 
         guard let journal else {
-            let rawItems = await rawItemsTask.value
+            let rawSection = await rawSectionTask.value
 
             guard Task.isCancelled == false else {
                 return
             }
 
-            timelineContent = rawItems.isEmpty ? .empty : .raw(rawItems)
+            timelineContent = rawSection.isEmpty ? .empty : .raw(rawSection)
             return
         }
 
@@ -465,26 +463,29 @@ struct TodayView: View {
             return
         }
 
-        let rawItems = await rawItemsTask.value
+        let rawSection = await rawSectionTask.value
 
         guard Task.isCancelled == false else {
             return
         }
 
         guard parsedJournal.hasSummaryContent else {
-            timelineContent = rawItems.isEmpty ? .empty : .raw(rawItems)
+            timelineContent = rawSection.isEmpty ? .empty : .raw(rawSection)
             return
         }
 
-        let recentItems: [TimelineItem]
+        let recentSection: TimelineSection
         if parsedJournal.hasNewerActivity {
             timelinePreparationStatus = .buildingRecentActivity
-            recentItems = Self.recentTimelineItems(
-                from: rawItems,
+            let recentItems = Self.recentTimelineItems(
+                from: rawSection.items,
                 matching: Set(parsedJournal.uncompiledRawEvents.map(\.id))
             )
+            recentSection = await Task.detached(priority: .userInitiated) {
+                TimelineSection.build(from: recentItems)
+            }.value
         } else {
-            recentItems = []
+            recentSection = .empty
         }
 
         guard Task.isCancelled == false else {
@@ -495,8 +496,8 @@ struct TodayView: View {
         timelineContent = .journal(
             document: parsedJournal.document,
             refreshedAt: journal.updatedAt,
-            recentItems: recentItems,
-            timelineItems: rawItems
+            recentSection: recentSection,
+            timelineSection: rawSection
         )
     }
 
@@ -517,16 +518,16 @@ struct TodayView: View {
         )
     }
 
-    nonisolated private static func buildTimelineItems(
+    nonisolated private static func buildTimelineSection(
         rawEvents: [ActivityEvent],
         installedApplications: [InstalledApplication]
-    ) -> [TimelineItem] {
+    ) -> TimelineSection {
         let groupedRawEvents = ActivityEvidencePreprocessor.groupedMeaningfulEvents(from: rawEvents)
         let applicationsByBundleID = Dictionary(uniqueKeysWithValues: installedApplications.map {
             ($0.bundleID.lowercased(), $0)
         })
 
-        return groupedRawEvents
+        let items = groupedRawEvents
             .filter { $0.isExcluded == false }
             .map { event in
                 let bundlePath = applicationsByBundleID[event.bundleId.lowercased()]?.bundlePath
@@ -552,6 +553,8 @@ struct TodayView: View {
                     appName: event.appName
                 )
             }
+
+        return TimelineSection.build(from: items)
     }
 
     nonisolated private static func recentTimelineItems(
@@ -568,19 +571,37 @@ struct TodayView: View {
     }
 }
 
+struct TimelineSection: Sendable {
+    let items: [TimelineItem]
+    let insights: [TimelineInsightGroup]
+
+    static let empty = TimelineSection(items: [], insights: [])
+
+    var isEmpty: Bool {
+        items.isEmpty
+    }
+
+    static func build(from items: [TimelineItem]) -> TimelineSection {
+        TimelineSection(
+            items: items,
+            insights: TimelineInsightBuilder.build(from: items)
+        )
+    }
+}
+
 private enum TimelineContent: Sendable {
     case empty
-    case journal(document: JournalMarkdownDocument, refreshedAt: Date, recentItems: [TimelineItem], timelineItems: [TimelineItem])
-    case raw([TimelineItem])
+    case journal(document: JournalMarkdownDocument, refreshedAt: Date, recentSection: TimelineSection, timelineSection: TimelineSection)
+    case raw(TimelineSection)
 
     var isEmpty: Bool {
         switch self {
         case .empty:
             return true
-        case .journal(let document, _, _, let timelineItems):
-            return (document.leadingBlocks.isEmpty && document.sections.isEmpty) && timelineItems.isEmpty
-        case .raw(let items):
-            return items.isEmpty
+        case .journal(let document, _, _, let timelineSection):
+            return (document.leadingBlocks.isEmpty && document.sections.isEmpty) && timelineSection.isEmpty
+        case .raw(let section):
+            return section.isEmpty
         }
     }
 
@@ -596,10 +617,10 @@ private enum TimelineContent: Sendable {
         switch self {
         case .empty:
             return false
-        case .journal(_, _, _, let timelineItems):
-            return timelineItems.isEmpty == false
-        case .raw(let items):
-            return items.isEmpty == false
+        case .journal(_, _, _, let timelineSection):
+            return timelineSection.isEmpty == false
+        case .raw(let section):
+            return section.isEmpty == false
         }
     }
 

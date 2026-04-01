@@ -3,6 +3,32 @@ import Testing
 @testable import OpenbirdApp
 
 struct TimelineInsightBuilderTests {
+    @Test func buildsTimelineSectionWithCachedInsights() {
+        let base = Self.makeDate(hour: 8, minute: 44)
+        let items = [
+            Self.makeItem(
+                startedAt: base,
+                endedAt: base.addingTimeInterval(60),
+                appName: "KakaoTalk",
+                title: "황보민경",
+                bullets: ["Asked whether the medicine was helping"]
+            ),
+            Self.makeItem(
+                startedAt: base.addingTimeInterval(2 * 60),
+                endedAt: base.addingTimeInterval(3 * 60),
+                appName: "WhatsApp",
+                title: "Demo thread",
+                bullets: ["Replied with the latest build"]
+            ),
+        ]
+
+        let section = TimelineSection.build(from: items)
+
+        #expect(section.items.count == 2)
+        #expect(section.insights.count == 1)
+        #expect(section.insights[0].kind == .communication)
+    }
+
     @Test func mergesAdjacentCommunicationActivityIntoOneInsight() {
         let base = Self.makeDate(hour: 8, minute: 44)
         let items = [
