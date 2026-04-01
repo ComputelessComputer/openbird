@@ -401,6 +401,30 @@ final class AppModel: ObservableObject {
         return version
     }
 
+    nonisolated static func shouldAutomaticallyCheckForUpdates(
+        appVersion: String?,
+        isUpdateCheckInFlight: Bool,
+        availableUpdate: AppUpdate?,
+        lastCheckDate: Date?,
+        now: Date,
+        automaticUpdateCheckInterval: TimeInterval
+    ) -> Bool {
+        guard appVersion != nil else {
+            return false
+        }
+        guard isUpdateCheckInFlight == false else {
+            return false
+        }
+        guard availableUpdate == nil else {
+            return false
+        }
+        guard let lastCheckDate else {
+            return true
+        }
+
+        return now.timeIntervalSince(lastCheckDate) >= automaticUpdateCheckInterval
+    }
+
     nonisolated static func autoAdvancedSelectedDay(
         from selectedDay: Date,
         previousCurrentDay: Date,
@@ -577,6 +601,7 @@ final class AppModel: ObservableObject {
     func handleAppDidBecomeActive() {
         handleCurrentDayChangeIfNeeded()
         refreshAccessibilityPermissionState()
+        checkForUpdatesIfNeeded()
     }
 
     func requestChatFocus() {
@@ -952,18 +977,15 @@ final class AppModel: ObservableObject {
     }
 
     private func checkForUpdatesIfNeeded() {
-        guard appVersion != nil else {
-            return
-        }
-        guard updateCheckTask == nil else {
-            return
-        }
-        guard availableUpdate == nil else {
-            return
-        }
-
-        if let lastCheckDate = userDefaults.object(forKey: Self.lastUpdateCheckDateKey) as? Date,
-           Date().timeIntervalSince(lastCheckDate) < Self.automaticUpdateCheckInterval {
+        let lastCheckDate = userDefaults.object(forKey: Self.lastUpdateCheckDateKey) as? Date
+        guard Self.shouldAutomaticallyCheckForUpdates(
+            appVersion: appVersion,
+            isUpdateCheckInFlight: updateCheckTask != nil,
+            availableUpdate: availableUpdate,
+            lastCheckDate: lastCheckDate,
+            now: Date(),
+            automaticUpdateCheckInterval: Self.automaticUpdateCheckInterval
+        ) else {
             return
         }
 
