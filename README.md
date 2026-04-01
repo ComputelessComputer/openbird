@@ -1,51 +1,36 @@
+![Openbird Today view showing a generated daily review on macOS](./apps/landing/public/openbird-screenshot.png)
+
 # Openbird
 
-Openbird is a local-first macOS activity journal.
+Openbird is a local-first macOS app that keeps a private record of your workday, turns it into a daily review, and lets you ask questions about what you were doing.
 
-It watches your current work context through the Accessibility API, stores that context on your Mac, and turns it into a daily review and follow-up chat.
+It is built for people who want help remembering their day without sending their activity history to someone else's server.
 
-> Disclaimer: Openbird is an experimental proof-of-concept app. The goal is to validate this local accessibility-first context layer before it is integrated into the [Char](https://char.com) codebase at [fastrepl/char](https://github.com/fastrepl/char).
+No account. No backend. Your data stays on your Mac by default.
 
-It exists because software with this much visibility into your day should not be a black box.
+## What You Can Do With It
 
-No account is required. No backend is required.
+Openbird builds a timeline from the app, window, tab, and on-screen context you are actively using, then uses that history to help you:
 
-## Why This Exists
+- generate a daily review with time blocks, highlights, and a short narrative
+- ask follow-up questions about your day in chat
+- jump back to the apps, windows, URLs, and timestamps behind each summary
 
-If an app can see what you are doing across your computer, you should be able to inspect it, control it, pause it, and delete its data.
+It is useful for questions like:
 
-Openbird is built around a simple idea:
+- What did I actually spend time on today?
+- What was I working on around 3 PM?
+- Which project got most of my attention?
+- Which apps, tabs, or docs was I using during that stretch?
 
-- your activity data should stay on your machine by default
-- your model should be your choice
-- the privacy boundary should be explicit
-- software this sensitive should be open source
+## Privacy, In Plain Terms
 
-This is not "trust us" software. The point is that you do not have to.
-
-## What Openbird Does
-
-Openbird captures the frontmost app and window, builds a local timeline of your day, and uses that log to generate:
-
-- a daily review with time blocks, highlights, and a short narrative
-- follow-up chat scoped to your local activity data
-- citations back to the underlying apps, windows, URLs, and timestamps
-
-It is meant to answer questions like:
-
-- What did I do today?
-- What was I working on around 3pm?
-- Which project took most of my attention?
-- What tabs, apps, or docs was I using during that block?
-
-## Privacy Boundary
-
-Openbird is intentionally conservative.
+Openbird is designed so you can see what it knows, control what it captures, and remove data whenever you want.
 
 Openbird captures:
 
 - the frontmost app
-- bundle ID and app name
+- app name and bundle ID
 - window title
 - browser tab URL when available
 - visible text from the active window's accessibility tree
@@ -65,22 +50,22 @@ You can also:
 - pause capture at any time
 - exclude apps
 - exclude domains
-- inspect the raw log used for generation
+- inspect the raw log behind each summary
 - delete the last hour, the last day, or everything
 
 All captured data is stored locally in:
 
 `~/Library/Application Support/Openbird/openbird.sqlite`
 
-## Bring Your Own Model
+## Use Your Own Model
 
-Openbird supports local-first BYOK out of the box.
+Openbird works with local and self-hosted model providers, including:
 
 - Ollama
 - LM Studio
 - other OpenAI-compatible endpoints
 
-You can run fully offline if your model is local.
+If your model runs locally, Openbird can stay fully offline.
 
 Default local endpoints:
 
@@ -100,36 +85,30 @@ Download the latest release here:
 
 [Latest Release](https://github.com/ComputelessComputer/openbird/releases/latest)
 
-New releases are shipped as a signed macOS Apple Silicon DMG.
-
-If you are downloading an older tag, you may still see the previous unsigned tarball format.
-
 Open the DMG, drag `Openbird.app` into `Applications`, then launch it.
 
 ## Quick Start
 
-1. Download and extract the latest release.
-2. Launch `OpenbirdApp`.
+1. Download the latest release.
+2. Launch `Openbird.app`.
 3. Grant Accessibility permission when prompted.
-4. In Settings, choose an Ollama or LM Studio preset.
+4. In Settings, choose an Ollama or LM Studio preset, or add your own compatible endpoint.
 5. Click `Check Connection`, then save the provider.
-6. Go to `Today` and generate your first review.
+6. Open `Today` and generate your first review.
 7. Use `Chat` to ask questions about your day.
 
-## What The App Looks Like
+## Inside The App
 
-Openbird has four main surfaces:
+Openbird has four main areas:
 
-- Onboarding: explains permissions and privacy
-- Today: generates the daily review
-- Chat: asks questions against your local activity log
-- Settings: provider setup, exclusions, retention, pause, and delete controls
+- Onboarding for permissions and privacy
+- Today for generating your daily review
+- Chat for asking questions about your activity history
+- Settings for model setup, exclusions, retention, pause, and delete controls
 
-![Openbird Today view showing a generated daily review on macOS](./apps/landing/public/openbird-screenshot.png)
+## Project Status
 
-## Current State
-
-Openbird is early, but the core loop works:
+Openbird is still early and should be treated as experimental software, but the main flow already works:
 
 - local capture
 - local storage
@@ -138,14 +117,12 @@ Openbird is early, but the core loop works:
 - daily journal generation
 - date-scoped chat over your activity history
 
-The current scope is intentionally narrow. Openbird is focused on being a trustworthy personal activity journal first.
-
-The longer-term direction is to bring this work into char.com without giving up the local-first and inspectable privacy model established here.
+The current focus is a trustworthy personal activity journal first. Parts of this work may later feed into [Char](https://char.com), but the goal here is to keep the local-first, inspectable privacy model intact.
 
 ## Open Source
 
-Open source is not a branding choice here. It is part of the product.
+Open source is part of the product.
 
-When software observes your work, transparency matters. You should be able to inspect how it captures data, where it stores it, what it excludes, and which model receives your prompts.
+When an app can observe your work, you should be able to inspect how it works, where it stores data, what it excludes, and which model receives your prompts.
 
-The codebase is open because trust is better when it is verifiable.
+The code is public because trust is stronger when it can be verified.
