@@ -4,7 +4,7 @@ Openbird is a local-first macOS activity journal.
 
 It watches your current work context through the Accessibility API, stores that context on your Mac, and turns it into a daily review and follow-up chat.
 
-Openbird is also the context layer planned for future integration into [char.com](https://char.com).
+> Disclaimer: Openbird is an experimental proof-of-concept app. The goal is to validate this local accessibility-first context layer before it is integrated into the [Char](https://char.com) codebase at [fastrepl/char](https://github.com/fastrepl/char).
 
 It exists because software with this much visibility into your day should not be a black box.
 
