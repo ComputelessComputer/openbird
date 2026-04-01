@@ -6,6 +6,7 @@ struct TodayView: View {
     @State private var timelineContent: TimelineContent = .empty
     @State private var isPreparingTimeline = false
     @State private var timelinePreparationStatus: TimelinePreparationStatus?
+    @State private var selectedTimelineMode: TodayTimelineMode = .topic
     @State private var isChatExpanded = false
     @FocusState private var focusedField: TodayChatDock.FocusField?
     private let collapsedChatClearance: CGFloat = 92
@@ -30,6 +31,14 @@ struct TodayView: View {
     var body: some View {
         VStack(alignment: .leading, spacing: 20) {
             header
+
+            if availableTimelineModes.count > 1 {
+                HStack {
+                    Spacer()
+                    timelineModePicker
+                        .frame(width: 240)
+                }
+            }
 
             ScrollView {
                 LazyVStack(alignment: .leading, spacing: 20) {
@@ -135,13 +144,31 @@ struct TodayView: View {
         }
     }
 
+    private var timelineModePicker: some View {
+        Picker("View", selection: $selectedTimelineMode) {
+            ForEach(availableTimelineModes, id: \.self) { mode in
+                Text(mode.title)
+                    .tag(mode)
+            }
+        }
+        .pickerStyle(.segmented)
+        .labelsHidden()
+    }
+
     @ViewBuilder
     private var timelineView: some View {
         switch timelineContent {
         case .empty:
             EmptyView()
-        case .journal(let document, let refreshedAt, let recentItems):
-            journalTimeline(document: document, refreshedAt: refreshedAt, recentItems: recentItems)
+        case .journal(let document, let refreshedAt, let recentItems, let timelineItems):
+            switch activeTimelineMode {
+            case .topic:
+                journalTimeline(document: document, refreshedAt: refreshedAt, recentItems: recentItems)
+            case .timeline:
+                timelineCard(items: timelineItems)
+            case nil:
+                EmptyView()
+            }
         case .raw(let items):
             timelineCard(items: items)
         }
@@ -247,6 +274,18 @@ struct TodayView: View {
         )
     }
 
+    private var availableTimelineModes: [TodayTimelineMode] {
+        timelineContent.availableModes
+    }
+
+    private var activeTimelineMode: TodayTimelineMode? {
+        TodayTimelineMode.resolvedSelection(
+            selectedTimelineMode,
+            hasJournalContent: timelineContent.hasJournalContent,
+            hasTimelineItems: timelineContent.hasTimelineItems
+        )
+    }
+
     private var journalActionTitle: String {
         model.todayJournal == nil ? "Generate" : "Refresh"
     }
@@ -346,6 +385,12 @@ struct TodayView: View {
         let journal = model.todayJournal
         let rawEvents = model.rawEvents
         let installedApplications = model.installedApplications
+        let rawItemsTask = Task.detached(priority: .userInitiated) {
+            Self.buildTimelineItems(
+                rawEvents: rawEvents,
+                installedApplications: installedApplications
+            )
+        }
 
         isPreparingTimeline = true
         timelinePreparationStatus = .groupingActivity
@@ -355,12 +400,7 @@ struct TodayView: View {
         }
 
         guard let journal else {
-            let rawItems = await Task.detached(priority: .userInitiated) {
-                Self.buildTimelineItems(
-                    rawEvents: rawEvents,
-                    installedApplications: installedApplications
-                )
-            }.value
+            let rawItems = await rawItemsTask.value
 
             guard Task.isCancelled == false else {
                 return
@@ -382,19 +422,13 @@ struct TodayView: View {
             return
         }
 
+        let rawItems = await rawItemsTask.value
+
+        guard Task.isCancelled == false else {
+            return
+        }
+
         guard parsedJournal.hasSummaryContent else {
-            timelinePreparationStatus = .groupingActivity
-            let rawItems = await Task.detached(priority: .userInitiated) {
-                Self.buildTimelineItems(
-                    rawEvents: rawEvents,
-                    installedApplications: installedApplications
-                )
-            }.value
-
-            guard Task.isCancelled == false else {
-                return
-            }
-
             timelineContent = rawItems.isEmpty ? .empty : .raw(rawItems)
             return
         }
@@ -402,12 +436,10 @@ struct TodayView: View {
         let recentItems: [TimelineItem]
         if parsedJournal.hasNewerActivity {
             timelinePreparationStatus = .buildingRecentActivity
-            recentItems = await Task.detached(priority: .userInitiated) {
-                Self.buildTimelineItems(
-                    rawEvents: parsedJournal.uncompiledRawEvents,
-                    installedApplications: installedApplications
-                )
-            }.value
+            recentItems = Self.recentTimelineItems(
+                from: rawItems,
+                matching: Set(parsedJournal.uncompiledRawEvents.map(\.id))
+            )
         } else {
             recentItems = []
         }
@@ -420,7 +452,8 @@ struct TodayView: View {
         timelineContent = .journal(
             document: parsedJournal.document,
             refreshedAt: journal.updatedAt,
-            recentItems: recentItems
+            recentItems: recentItems,
+            timelineItems: rawItems
         )
     }
 
@@ -469,28 +502,116 @@ struct TodayView: View {
                     timeRange: "\(OpenbirdDateFormatting.timeString(for: event.startedAt)) - \(OpenbirdDateFormatting.timeString(for: event.endedAt))",
                     title: event.displayTitle,
                     bullets: bulletCandidates,
+                    sourceEventIDs: event.sourceEventIDs,
                     bundleId: event.bundleId,
                     bundlePath: bundlePath,
                     appName: event.appName
                 )
             }
     }
+
+    nonisolated private static func recentTimelineItems(
+        from items: [TimelineItem],
+        matching sourceEventIDs: Set<String>
+    ) -> [TimelineItem] {
+        guard sourceEventIDs.isEmpty == false else {
+            return []
+        }
+
+        return items.filter { item in
+            item.sourceEventIDs.contains { sourceEventIDs.contains($0) }
+        }
+    }
 }
 
 private enum TimelineContent: Sendable {
     case empty
-    case journal(document: JournalMarkdownDocument, refreshedAt: Date, recentItems: [TimelineItem])
+    case journal(document: JournalMarkdownDocument, refreshedAt: Date, recentItems: [TimelineItem], timelineItems: [TimelineItem])
     case raw([TimelineItem])
 
     var isEmpty: Bool {
         switch self {
         case .empty:
             return true
-        case .journal(let document, _, let recentItems):
-            return (document.leadingBlocks.isEmpty && document.sections.isEmpty) && recentItems.isEmpty
+        case .journal(let document, _, _, let timelineItems):
+            return (document.leadingBlocks.isEmpty && document.sections.isEmpty) && timelineItems.isEmpty
         case .raw(let items):
             return items.isEmpty
         }
+    }
+
+    var hasJournalContent: Bool {
+        guard case .journal(let document, _, _, _) = self else {
+            return false
+        }
+
+        return document.leadingBlocks.isEmpty == false || document.sections.isEmpty == false
+    }
+
+    var hasTimelineItems: Bool {
+        switch self {
+        case .empty:
+            return false
+        case .journal(_, _, _, let timelineItems):
+            return timelineItems.isEmpty == false
+        case .raw(let items):
+            return items.isEmpty == false
+        }
+    }
+
+    var availableModes: [TodayTimelineMode] {
+        TodayTimelineMode.availableModes(
+            hasJournalContent: hasJournalContent,
+            hasTimelineItems: hasTimelineItems
+        )
+    }
+}
+
+enum TodayTimelineMode: Hashable {
+    case topic
+    case timeline
+
+    var title: String {
+        switch self {
+        case .topic:
+            return "Topic"
+        case .timeline:
+            return "Timeline"
+        }
+    }
+
+    static func availableModes(
+        hasJournalContent: Bool,
+        hasTimelineItems: Bool
+    ) -> [TodayTimelineMode] {
+        var modes: [TodayTimelineMode] = []
+
+        if hasJournalContent {
+            modes.append(.topic)
+        }
+
+        if hasTimelineItems {
+            modes.append(.timeline)
+        }
+
+        return modes
+    }
+
+    static func resolvedSelection(
+        _ selection: TodayTimelineMode,
+        hasJournalContent: Bool,
+        hasTimelineItems: Bool
+    ) -> TodayTimelineMode? {
+        let availableModes = availableModes(
+            hasJournalContent: hasJournalContent,
+            hasTimelineItems: hasTimelineItems
+        )
+
+        guard availableModes.isEmpty == false else {
+            return nil
+        }
+
+        return availableModes.contains(selection) ? selection : availableModes[0]
     }
 }
 
@@ -615,6 +736,7 @@ private struct TimelineItem: Identifiable, Sendable {
     let timeRange: String
     let title: String
     let bullets: [String]
+    let sourceEventIDs: [String]
     let bundleId: String?
     let bundlePath: String?
     let appName: String
