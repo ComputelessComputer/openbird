@@ -277,7 +277,7 @@ public actor JournalGenerator {
         - `## Hardware Window Shopping`
         - `## YouTube Deep Dive`
 
-        Day: \(OpenbirdDateFormatting.weekdayFormatter.string(from: date))
+        Day: \(OpenbirdDateFormatting.weekdayString(for: date))
 
         Evidence:
         \(sections.map(sectionPrompt).joined(separator: "\n\n"))
@@ -314,7 +314,7 @@ public actor JournalGenerator {
             return """
             Looked through your context.
 
-            No meaningful activity captured yet for \(OpenbirdDateFormatting.weekdayFormatter.string(from: date)).
+            No meaningful activity captured yet for \(OpenbirdDateFormatting.weekdayString(for: date)).
             """
         }
 
@@ -338,7 +338,7 @@ public actor JournalGenerator {
     }
 
     private func summaryFramingParagraph(for date: Date, sections: [PreparedSection]) -> String {
-        let weekday = OpenbirdDateFormatting.weekdayFormatter.string(from: date)
+        let weekday = OpenbirdDateFormatting.weekdayString(for: date)
 
         switch sections.count {
         case 0:

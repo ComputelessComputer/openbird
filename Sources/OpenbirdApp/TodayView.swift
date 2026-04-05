@@ -11,23 +11,6 @@ struct TodayView: View {
     @FocusState private var focusedField: TodayChatDock.FocusField?
     private let collapsedChatClearance: CGFloat = 92
     private let expandedChatClearance: CGFloat = 420
-    private static let selectedDayMonthFormatter: DateFormatter = {
-        let formatter = DateFormatter()
-        formatter.calendar = .current
-        formatter.locale = Locale(identifier: "en_US_POSIX")
-        formatter.timeZone = .current
-        formatter.dateFormat = "MMMM"
-        return formatter
-    }()
-    private static let selectedDayYearFormatter: DateFormatter = {
-        let formatter = DateFormatter()
-        formatter.calendar = .current
-        formatter.locale = Locale(identifier: "en_US_POSIX")
-        formatter.timeZone = .current
-        formatter.dateFormat = "yyyy"
-        return formatter
-    }()
-
     var body: some View {
         VStack(alignment: .leading, spacing: 20) {
             header
@@ -379,8 +362,8 @@ struct TodayView: View {
 
     private var selectedDayTitle: String {
         let day = Calendar.current.component(.day, from: model.selectedDay)
-        let month = Self.selectedDayMonthFormatter.string(from: model.selectedDay)
-        let year = Self.selectedDayYearFormatter.string(from: model.selectedDay)
+        let month = Self.selectedDayMonthString(for: model.selectedDay)
+        let year = Self.selectedDayYearString(for: model.selectedDay)
         return "\(month) \(day)\(ordinalSuffix(for: day)), \(year)"
     }
 
@@ -419,6 +402,24 @@ struct TodayView: View {
         default:
             return "th"
         }
+    }
+
+    private static func selectedDayMonthString(for date: Date) -> String {
+        let formatter = DateFormatter()
+        formatter.calendar = .autoupdatingCurrent
+        formatter.locale = Locale(identifier: "en_US_POSIX")
+        formatter.timeZone = .autoupdatingCurrent
+        formatter.dateFormat = "MMMM"
+        return formatter.string(from: date)
+    }
+
+    private static func selectedDayYearString(for date: Date) -> String {
+        let formatter = DateFormatter()
+        formatter.calendar = .autoupdatingCurrent
+        formatter.locale = Locale(identifier: "en_US_POSIX")
+        formatter.timeZone = .autoupdatingCurrent
+        formatter.dateFormat = "yyyy"
+        return formatter.string(from: date)
     }
 
     @MainActor
