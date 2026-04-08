@@ -2,6 +2,7 @@ import Foundation
 
 public actor OpenbirdStore {
     private let database: SQLiteDatabase
+    private let exclusionEngine = ExclusionEngine()
     private var pendingPreparedActivityDays: Set<String> = []
     private var dirtyPreparedActivityDays: Set<String> = []
     private var preparedActivityRefreshTask: Task<Void, Never>?
@@ -44,10 +45,12 @@ public actor OpenbirdStore {
 
     public func saveExclusion(_ exclusion: ExclusionRule) throws {
         try database.saveExclusion(exclusion)
+        try invalidatePreparedActivityCacheForExclusionChange()
     }
 
     public func deleteExclusion(id: String) throws {
         try database.deleteExclusion(id: id)
+        try invalidatePreparedActivityCacheForExclusionChange()
     }
 
     public func saveActivityEvent(_ event: ActivityEvent) throws {
@@ -56,7 +59,12 @@ public actor OpenbirdStore {
     }
 
     public func loadActivityEvents(in range: ClosedRange<Date>, includeExcluded: Bool = false) throws -> [ActivityEvent] {
-        try database.loadActivityEvents(in: range, includeExcluded: includeExcluded)
+        let events = try database.loadActivityEvents(in: range, includeExcluded: includeExcluded)
+        guard includeExcluded == false else {
+            return events
+        }
+
+        return try filterCurrentExclusions(from: events)
     }
 
     public func searchActivityEvents(
@@ -65,7 +73,8 @@ public actor OpenbirdStore {
         appFilters: [String] = [],
         topK: Int = 8
     ) throws -> [ActivityEvent] {
-        try database.searchActivityEvents(query: query, in: range, appFilters: appFilters, topK: topK)
+        let events = try database.searchActivityEvents(query: query, in: range, appFilters: appFilters, topK: topK)
+        return try filterCurrentExclusions(from: events)
     }
 
     public func loadJournal(for day: String) throws -> DailyJournal? {
@@ -118,7 +127,7 @@ public actor OpenbirdStore {
         let day = OpenbirdDateFormatting.dayString(for: date)
         if dirtyPreparedActivityDays.contains(day) == false,
            let cached = try database.loadPreparedActivityEvents(for: day) {
-            return cached
+            return try filterCurrentExclusions(from: cached)
         }
 
         return try await rebuildPreparedActivityEvents(for: day, date: date)
@@ -133,16 +142,55 @@ public actor OpenbirdStore {
     }
 
     private func rebuildPreparedActivityEvents(for day: String, date: Date) async throws -> [GroupedActivityEvent] {
-        let rawEvents = try database.loadActivityEvents(
-            in: Calendar.autoupdatingCurrent.dayRange(for: date),
-            includeExcluded: true
-        )
+        let rawEvents = try loadActivityEvents(in: Calendar.autoupdatingCurrent.dayRange(for: date))
         let groupedEvents = await Task.detached(priority: .utility) {
             ActivityEvidencePreprocessor.groupedMeaningfulEvents(from: rawEvents)
         }.value
         try database.savePreparedActivityEvents(groupedEvents, for: day)
         dirtyPreparedActivityDays.remove(day)
         return groupedEvents
+    }
+
+    private func filterCurrentExclusions(from events: [ActivityEvent]) throws -> [ActivityEvent] {
+        let exclusions = try activeExclusions()
+        guard exclusions.isEmpty == false else {
+            return events
+        }
+
+        return events.filter { event in
+            event.isExcluded == false &&
+            exclusionEngine.isExcluded(
+                bundleID: event.bundleId,
+                url: event.url,
+                rules: exclusions
+            ) == false
+        }
+    }
+
+    private func filterCurrentExclusions(from events: [GroupedActivityEvent]) throws -> [GroupedActivityEvent] {
+        let exclusions = try activeExclusions()
+        guard exclusions.isEmpty == false else {
+            return events.filter { $0.isExcluded == false }
+        }
+
+        return events.filter { event in
+            event.isExcluded == false &&
+            exclusionEngine.isExcluded(
+                bundleID: event.bundleId,
+                url: event.url,
+                rules: exclusions
+            ) == false
+        }
+    }
+
+    private func activeExclusions() throws -> [ExclusionRule] {
+        try database.loadExclusions().filter(\.isEnabled)
+    }
+
+    private func invalidatePreparedActivityCacheForExclusionChange() throws {
+        try database.deleteAllPreparedActivityEvents()
+        pendingPreparedActivityDays.removeAll()
+        dirtyPreparedActivityDays.removeAll()
     }
 
     private func invalidatePreparedActivityDays<S: Sequence>(for days: S) where S.Element == String {

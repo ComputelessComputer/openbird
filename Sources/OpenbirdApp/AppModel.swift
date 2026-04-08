@@ -93,6 +93,7 @@ final class AppModel: ObservableObject {
     private let store: OpenbirdStore
     private let currentActivityContextService = CurrentActivityContextService()
     private let installedApplicationService = InstalledApplicationService()
+    private let exclusionEngine = ExclusionEngine()
     private let journalGenerator: JournalGenerator
     private let retrievalService: RetrievalService
     private let chatService: ChatService
@@ -446,6 +447,13 @@ final class AppModel: ObservableObject {
         }
     }
 
+    nonisolated static func journalMatchesVisibleEvents(
+        _ journal: DailyJournal,
+        visibleEventIDs: Set<String>
+    ) -> Bool {
+        Set(journal.sections.flatMap(\.sourceEventIDs)).isSubset(of: visibleEventIDs)
+    }
+
     nonisolated static func updateStatusText(
         appVersionAvailable: Bool,
         isInstallingUpdate: Bool,
@@ -543,7 +551,7 @@ final class AppModel: ObservableObject {
                 title: "Reading captured activity",
                 detail: "Querying the local timeline database for raw events recorded on the selected day."
             )
-            let loadedRawEvents = try await store.loadActivityEvents(in: dayRange, includeExcluded: true)
+            let loadedRawEvents = try await store.loadActivityEvents(in: dayRange)
             await store.prepareActivityEventsInBackground(for: requestedDay)
             dayLoadStatus = Self.makeDayLoadStatus(
                 step: 3,
@@ -551,7 +559,10 @@ final class AppModel: ObservableObject {
                 title: "Loading saved summary",
                 detail: "Checking whether Openbird already has a journal summary cached for this day."
             )
-            let loadedJournal = try await store.loadJournal(for: day)
+            let visibleEventIDs = Set(loadedRawEvents.map(\.id))
+            let loadedJournal = try await store.loadJournal(for: day).flatMap { journal in
+                Self.journalMatchesVisibleEvents(journal, visibleEventIDs: visibleEventIDs) ? journal : nil
+            }
             let totalDayLoadSteps = 5
 
             dayLoadStatus = Self.makeDayLoadStatus(
@@ -1141,7 +1152,7 @@ final class AppModel: ObservableObject {
 
     private func excludableDomainAction(for context: CurrentActivityContext?) -> StatusMenuExclusionState.Action? {
         guard let domain = context?.domain,
-              hasExclusion(kind: .domain, pattern: domain) == false
+              hasDomainExclusion(matching: domain) == false
         else {
             return nil
         }
@@ -1154,8 +1165,16 @@ final class AppModel: ObservableObject {
 
     private func hasExclusion(kind: ExclusionKind, pattern: String) -> Bool {
         exclusions.contains {
-            $0.kind == kind && $0.pattern.caseInsensitiveCompare(pattern) == .orderedSame
+            $0.isEnabled && $0.kind == kind && $0.pattern.caseInsensitiveCompare(pattern) == .orderedSame
         }
+    }
+
+    private func hasDomainExclusion(matching domain: String) -> Bool {
+        exclusionEngine.isExcluded(
+            bundleID: "",
+            url: "https://\(domain)",
+            rules: exclusions.filter { $0.kind == .domain && $0.isEnabled }
+        )
     }
 
     private func loadCurrentSettings() async throws -> AppSettings {
@@ -1411,8 +1430,11 @@ final class AppModel: ObservableObject {
         lastAutomaticSelectedDayRefreshAt = now
 
         do {
-            let loadedRawEvents = try await store.loadActivityEvents(in: dayRange, includeExcluded: true)
-            let loadedJournal = try await store.loadJournal(for: requestedDayString)
+            let loadedRawEvents = try await store.loadActivityEvents(in: dayRange)
+            let visibleEventIDs = Set(loadedRawEvents.map(\.id))
+            let loadedJournal = try await store.loadJournal(for: requestedDayString).flatMap { journal in
+                Self.journalMatchesVisibleEvents(journal, visibleEventIDs: visibleEventIDs) ? journal : nil
+            }
 
             guard OpenbirdDateFormatting.dayString(for: selectedDay) == requestedDayString else {
                 return

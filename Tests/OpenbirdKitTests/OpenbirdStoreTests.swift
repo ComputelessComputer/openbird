@@ -68,6 +68,78 @@ struct OpenbirdStoreTests {
         #expect(results.first?.appName == "VS Code")
     }
 
+    @Test func loadActivityEventsRespectsCurrentDomainExclusions() async throws {
+        let databaseURL = FileManager.default.temporaryDirectory.appendingPathComponent(UUID().uuidString).appendingPathExtension("sqlite")
+        let store = try OpenbirdStore(databaseURL: databaseURL)
+        let now = Date()
+
+        try await store.saveActivityEvent(
+            ActivityEvent(
+                id: "public-event",
+                startedAt: now.addingTimeInterval(-300),
+                endedAt: now.addingTimeInterval(-240),
+                bundleId: "com.apple.Safari",
+                appName: "Safari",
+                windowTitle: "Public",
+                url: "https://openbird.app",
+                visibleText: "Reviewed the homepage",
+                source: "accessibility",
+                contentHash: "public-event",
+                isExcluded: false
+            )
+        )
+        try await store.saveActivityEvent(
+            ActivityEvent(
+                id: "private-event",
+                startedAt: now.addingTimeInterval(-180),
+                endedAt: now.addingTimeInterval(-120),
+                bundleId: "com.apple.Safari",
+                appName: "Safari",
+                windowTitle: "Private",
+                url: "https://mail.google.com",
+                visibleText: "Read private mail",
+                source: "accessibility",
+                contentHash: "private-event",
+                isExcluded: false
+            )
+        )
+        try await store.saveExclusion(ExclusionRule(kind: .domain, pattern: "google.com"))
+
+        let events = try await store.loadActivityEvents(in: Calendar.current.dayRange(for: now))
+
+        #expect(events.map(\.id) == ["public-event"])
+    }
+
+    @Test func searchActivityEventsRespectsCurrentDomainExclusions() async throws {
+        let databaseURL = FileManager.default.temporaryDirectory.appendingPathComponent(UUID().uuidString).appendingPathExtension("sqlite")
+        let store = try OpenbirdStore(databaseURL: databaseURL)
+        let now = Date()
+
+        try await store.saveActivityEvent(
+            ActivityEvent(
+                startedAt: now.addingTimeInterval(-180),
+                endedAt: now,
+                bundleId: "com.apple.Safari",
+                appName: "Safari",
+                windowTitle: "Inbox",
+                url: "https://mail.google.com",
+                visibleText: "Reviewed a private launch plan",
+                source: "accessibility",
+                contentHash: "private-search",
+                isExcluded: false
+            )
+        )
+        try await store.saveExclusion(ExclusionRule(kind: .domain, pattern: "google.com"))
+
+        let results = try await store.searchActivityEvents(
+            query: "launch plan",
+            in: Calendar.current.dayRange(for: now),
+            topK: 5
+        )
+
+        #expect(results.isEmpty)
+    }
+
     @Test func mergesOverlappingEventsWithSameContentHash() async throws {
         let databaseURL = FileManager.default.temporaryDirectory.appendingPathComponent(UUID().uuidString).appendingPathExtension("sqlite")
         let store = try OpenbirdStore(databaseURL: databaseURL)
@@ -389,6 +461,51 @@ struct OpenbirdStoreTests {
         let refreshed = try await store.preparedActivityEvents(for: start)
         #expect(refreshed.count == 1)
         #expect(refreshed.first?.sourceEventCount == 2)
+    }
+
+    @Test func preparedActivityEventsRefreshWhenDomainExclusionChanges() async throws {
+        let databaseURL = FileManager.default.temporaryDirectory.appendingPathComponent(UUID().uuidString).appendingPathExtension("sqlite")
+        let store = try OpenbirdStore(databaseURL: databaseURL)
+        let start = Date(timeIntervalSince1970: 1_720_000_000)
+
+        try await store.saveActivityEvent(
+            ActivityEvent(
+                id: "allowed-group",
+                startedAt: start,
+                endedAt: start.addingTimeInterval(30),
+                bundleId: "com.apple.Safari",
+                appName: "Safari",
+                windowTitle: "Openbird",
+                url: "https://openbird.app",
+                visibleText: "Reviewed the Openbird homepage",
+                source: "accessibility",
+                contentHash: "allowed-group",
+                isExcluded: false
+            )
+        )
+        try await store.saveActivityEvent(
+            ActivityEvent(
+                id: "excluded-group",
+                startedAt: start.addingTimeInterval(600),
+                endedAt: start.addingTimeInterval(630),
+                bundleId: "com.apple.Safari",
+                appName: "Safari",
+                windowTitle: "Mail",
+                url: "https://mail.google.com",
+                visibleText: "Reviewed private mail",
+                source: "accessibility",
+                contentHash: "excluded-group",
+                isExcluded: false
+            )
+        )
+
+        let initial = try await store.preparedActivityEvents(for: start)
+        #expect(initial.map(\.id) == ["allowed-group", "excluded-group"])
+
+        try await store.saveExclusion(ExclusionRule(kind: .domain, pattern: "google.com"))
+
+        let refreshed = try await store.preparedActivityEvents(for: start)
+        #expect(refreshed.map(\.id) == ["allowed-group"])
     }
 
     @Test func backgroundPrepareKeepsFreshPreparedActivityCache() async throws {
